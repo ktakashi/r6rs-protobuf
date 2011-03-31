@@ -1,0 +1,206 @@
+;; test-parse.scm: parser test routines for r6rs-protobuf
+;; Copyright (C) 2011 Julian Graham
+
+;; r6rs-protobuf is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#!r6rs
+
+(import (rnrs))
+(import (srfi :64))
+(import (protobuf compile parse))
+(import (protobuf compile tokenize))
+
+(define (mock-lexer . token-list)
+  (define tokens token-list)
+  (lambda ()
+    (if (null? tokens)
+	'*eoi*
+	(let ((token (car tokens)))
+	  (set! tokens (cdr tokens))
+	  (if (pair? token)	      
+	      (protoc:make-lexical-token (car token) #f (cdr token))
+	      (protoc:make-lexical-token token #f #f))))))
+
+(define (option-declaration-equal? o1 o2)
+  (and (protoc:option-declaration? o1)
+       (protoc:option-declaration? o2)
+       (equal? (protoc:option-declaration-name o1)
+	       (protoc:option-declaration-name o2))
+       (equal? (protoc:option-declaration-value o1)
+	       (protoc:option-declaration-value o2))))
+
+(define (proto-definition-equal? p1 p2)
+  (and (protoc:proto? p1)
+       (protoc:proto? p2)
+       (let loop ((options1 (protoc:proto-options p1))
+		  (options2 (protoc:proto-options p2)))
+	 (if (null? options1)
+	     (null? options2)
+	     (let ((option1 (car options1))
+		   (option2 (car options2)))
+	       (and (option-declaration-equal? option1 option2)
+		    (loop (cdr options1) (cdr options2))))))		   
+
+       (let loop ((packages1 (protoc:proto-package-definitions p1))
+		  (packages2 (protoc:proto-package-definitions p2)))
+	 (cond ((null? packages1) (null? packages2))
+	       ((null? packages2) #f)
+	       (else (let ((package1 (car packages1))
+			   (package2 (car packages2)))
+		       (and (package-definition-equal? package1 package2)
+			    (loop (cdr packages1) (cdr packages2)))))))))
+
+(define (package-definition-equal? p1 p2)
+  (and (protoc:package-definition? p1)
+       (protoc:package-definition? p2)
+       (equal? (protoc:package-definition-name p1)
+	       (protoc:package-definition-name p2))
+       (let loop ((options1 (protoc:package-definition-options p1))
+		  (options2 (protoc:package-definition-options p2)))
+	 (if (null? options1)
+	     (null? options2)
+	     (let ((option1 (car options1))
+		   (option2 (car options2)))
+	       (and (option-declaration-equal? option1 option2)
+		    (loop (cdr options1) (cdr options2))))))		        
+       (let loop ((definitions1 (protoc:package-definition-definitions p1))
+		  (definitions2 (protoc:package-definition-definitions p2)))
+	 (if (null? definitions1)
+	     (null? definitions2)
+	     (let ((definition1 (car definitions1))
+		   (definition2 (car definitions2)))
+	       (cond ((and (protoc:message-definition? definition1)
+			   (protoc:message-definition? definition2))
+		      (and (message-definition-equal? definition1 definition2)
+			   (loop (cdr definitions1) (cdr definition2))))
+		     ((and (protoc:enum-definition? definition1)
+			   (protoc:enum-definition? definition2))
+		      (and (enum-definition-equal? definition1 definition2)
+			   (loop (cdr definitions1) (cdr definitions2))))
+		     (else #f)))))))
+
+(define (message-definition-equal? m1 m2)
+  (and (protoc:message-definition? m1)
+       (protoc:message-definition? m2)
+       (equal? (protoc:message-definition-name m1)
+	       (protoc:message-definition-name m2))
+       (let loop ((options1 (protoc:message-definition-options m1))
+		  (options2 (protoc:message-definition-options m2)))
+	 (if (null? options1)
+	     (null? options2)
+	     (let ((option1 (car options1))
+		   (option2 (car options2)))
+	       (and (option-declaration-equal? option1 option2)
+		    (loop (cdr options1) (cdr options2))))))
+       (let loop ((fields1 (protoc:message-definition-fields m1))
+		  (fields2 (protoc:message-definition-fields m2)))
+	 (if (null? fields1)
+	     (null? fields2)
+	     (let ((field1 (car fields1))
+		   (field2 (car fields2)))
+	       (and (field-definition-equal? field1 field2)
+		    (loop (cdr fields1) (cdr fields2))))))))
+
+(define (field-definition-equal? f1 f2)
+  (and (protoc:field-definition? f1)
+       (protoc:field-definition? f2)
+       (eq? (protoc:field-definition-rule f1)
+	    (protoc:field-definition-rule f2))
+       (eq? (protoc:field-definition-type f1)
+	    (protoc:field-definition-type f2))
+       (equal? (protoc:field-definition-name f1)
+	       (protoc:field-definition-name f2))
+       (eqv? (protoc:field-definition-ordinal f1)
+	     (protoc:field-definition-ordinal f2))
+       (let loop ((options1 (protoc:field-definition-options f1))
+		  (options2 (protoc:field-definition-options f2)))
+	 (if (null? options1)
+	     (null? options2)
+	     (let ((option1 (car options1))
+		   (option2 (car options2)))
+	       (and (option-declaration-equal? option1 option2)
+		    (loop (cdr options1) (cdr options2))))))))
+
+(define (enum-value-definition-equal? v1 v2)
+  (and (protoc:enum-value-definition? v1)
+       (protoc:enum-value-definition? v2)
+       (equal? (protoc:enum-value-definition-name v1)
+	       (protoc:enum-value-definition-name v2))
+       (eqv? (protoc:enum-value-definition-ordinal v1)
+	     (protoc:enum-value-definition-ordinal v2))))
+
+(define (enum-definition-equal? e1 e2)
+  (and (protoc:enum-definition? e1)
+       (protoc:enum-definition? e2)
+       (equal? (protoc:enum-definition-name e1)
+	       (protoc:enum-definition-name e2))
+       (let loop ((options1 (protoc:enum-definition-options e1))
+		  (options2 (protoc:enum-definition-options e2)))
+	 (if (null? options1)
+	     (null? options2)
+	     (let ((option1 (car options1))
+		   (option2 (car options2)))
+	       (and (option-declaration-equal? option1 option2)
+		    (loop (cdr options1) (cdr options2))))))
+       (let loop ((values1 (protoc:enum-definition-values e1))
+		  (values2 (protoc:enum-definition-values e2)))
+	 (if (null? values1)
+	     (null? values2)
+	     (let ((value1 (car values1))
+		   (value2 (car values2)))
+	       (and (enum-value-definition-equal? value1 value2)
+		    (loop (cdr values1) (cdr values2))))))))
+
+(test-begin "parse")
+(test-begin "simple")
+
+(test-group "package"
+  (let* ((p ((protoc:make-parser 
+	      (mock-lexer 'PACKAGE '(IDENTIFIER . "foo.bar.baz") 
+			  'SEMICOLON)))))
+    (test-assert 
+     (proto-definition-equal? 
+      (protoc:make-proto (list (protoc:make-package-definition "foo.bar.baz")))
+      p))))
+(test-group "message"
+  (let* ((p ((protoc:make-parser 
+	      (mock-lexer 'MESSAGE '(IDENTIFIER . "Foo") 'LBRACE 'RBRACE)))))
+    (test-assert 
+     (proto-definition-equal?
+      (protoc:make-proto 
+       (list (protoc:make-package-definition 
+	      #f (list (protoc:make-message-definition "Foo"))))) 
+      p))))
+(test-group "enum"
+  (let* ((p ((protoc:make-parser 
+	      (mock-lexer 'ENUM '(IDENTIFIER . "Foo") 'LBRACE 'RBRACE)))))
+    (test-assert
+     (proto-definition-equal?
+      (protoc:make-proto 
+       (list (protoc:make-package-definition 
+	      #f (list (protoc:make-enum-definition "Foo"))))) 
+      p))))
+
+(test-end "simple")
+(test-begin "enum")
+
+(test-group "values"
+  (let* ((p ((protoc:make-parser
+	      (mock-lexer 'ENUM '(IDENTIFIER . "Foo") 'LBRACE
+			  '(IDENTIFIER . "FOO") 'EQUAL '(NUM-INTEGER . 1)
+			  'SEMICOLON 'RBRACE)))))
+    (test-assert p)))
+
+(test-end "enum")
+(test-end "parse")
