@@ -50,7 +50,24 @@
 	  protobuf:message-builder-field
 	  
 	  protobuf:message-write
-	  protobuf:message-read)
+	  protobuf:message-read
+
+	  protobuf:write-varint
+	  protobuf:write-double
+	  protobuf:write-float
+	  protobuf:write-int32
+	  protobuf:write-int64
+	  protobuf:write-uint32
+	  protobuf:write-uint64
+	  protobuf:write-sint32
+	  protobuf:write-sint64
+	  protobuf:write-fixed32
+	  protobuf:write-fixed64
+	  protobuf:write-sfixed32
+	  protobuf:write-sfixed64
+	  protobuf:write-bool
+	  protobuf:write-string
+	  protobuf:write-bytes)
   (import (rnrs))
 
   (define (zigzag-encode n bits)
@@ -61,12 +78,13 @@
     (- (bitwise-arithmetic-shift-right n 1)
        (* (bitwise-and n 1) n)))
     
-  (define (write-varint port varint)
+  (define (protobuf:write-varint port varint)
     (let ((b (bitwise-bit-field varint 0 7)))
       (if (> varint 127)
 	  (begin (put-u8 
 		  port (bitwise-ior (bitwise-arithmetic-shift-left 1 7) b))
-		 (write-varint port (bitwise-arithmetic-shift-right varint 7)))
+		 (protobuf:write-varint 
+		  port (bitwise-arithmetic-shift-right varint 7)))
 	  (put-u8 port b))))
 
   (define (read-varint port)
@@ -80,52 +98,54 @@
 	    tally)))
     (read-varint-inner port 0 0))
 
-  (define (write-double port double)
+  (define (protobuf:write-double port double)
     (let ((vec (make-bytevector 8)))
       (bytevector-ieee-double-set! vec 0 double (endianness little))
       (put-bytevector port vec)))
 
-  (define (write-float port float)
+  (define (protobuf:write-float port float)
     (let ((vec (make-bytevector 4)))
       (bytevector-ieee-single-set! vec 0 float (endianness little))
       (put-bytevector port vec)))
 
-  (define (write-int32 port int32) (write-varint port int32))
-  (define (write-int64 port int64) (write-varint port int64))
-  (define (write-uint32 port uint32) (write-varint port uint32))
-  (define (write-uint64 port uint64) (write-varint port uint64))
-  (define (write-sint32 port sint32) 
-    (write-varint port (zigzag-encode sint32 32)))
-  (define (write-sint64 port sint64)
-    (write-varint port (zigzag-encode sint64 64)))
-  (define (write-fixed32 port fixed32)
+  (define (protobuf:write-int32 port int32) (protobuf:write-varint port int32))
+  (define (protobuf:write-int64 port int64) (protobuf:write-varint port int64))
+  (define (protobuf:write-uint32 port uint32) 
+    (protobuf:write-varint port uint32))
+  (define (protobuf:write-uint64 port uint64) 
+    (protobuf:write-varint port uint64))
+  (define (protobuf:write-sint32 port sint32) 
+    (protobuf:write-varint port (zigzag-encode sint32 32)))
+  (define (protobuf:write-sint64 port sint64)
+    (protobuf:write-varint port (zigzag-encode sint64 64)))
+  (define (protobuf:write-fixed32 port fixed32)
     (let ((vec (make-bytevector 4)))
       (bytevector-u32-set! vec 0 fixed32 (endianness little))
       (put-bytevector port vec)))
 
-  (define (write-fixed64 port fixed64)
+  (define (protobuf:write-fixed64 port fixed64)
     (let ((vec (make-bytevector 8)))
       (bytevector-u64-set! vec 0 fixed64 (endianness little))
       (put-bytevector port vec)))
 
-  (define (write-sfixed32 port sfixed32)
+  (define (protobuf:write-sfixed32 port sfixed32)
     (let ((vec (make-bytevector 4)))
       (bytevector-s32-set! vec 0 sfixed32 (endianness little))
       (put-bytevector port vec)))
 
-  (define (write-sfixed64 port sfixed64)
+  (define (protobuf:write-sfixed64 port sfixed64)
     (let ((vec (make-bytevector 8)))
       (bytevector-s64-set! vec 0 sfixed64 (endianness little))
       (put-bytevector port vec)))
 
-  (define (write-bool port bool) (put-u8 port (if bool 1 0)))
+  (define (protobuf:write-bool port bool) (put-u8 port (if bool 1 0)))
 
-  (define (write-string port string)
-    (write-varint port (string-length string))
+  (define (protobuf:write-string port string)
+    (protobuf:write-varint port (string-length string))
     (put-bytevector port (string->utf8 string)))
 
-  (define (write-bytes port bytes) 
-    (write-varint port (bytevector-length bytes)) 
+  (define (protobuf:write-bytes port bytes) 
+    (protobuf:write-varint port (bytevector-length bytes)) 
     (put-bytevector port bytes))
 
   (define (read-double port)
@@ -156,7 +176,10 @@
   (define (read-bytes port) (get-bytevector-n port (read-varint port)))
 
   (define-enumeration 
-    wire-type (varint fixed64 length-delimited fixed32) wire-types)
+    wire-type 
+    (varint fixed64 length-delimited start-group end-group fixed32) 
+    wire-types)
+
   (define-enumeration
     field-type 
     (double float int32 int64 uint32 uint64 sint32 sint64 fixed32 fixed64 
@@ -198,10 +221,9 @@
 	(protobuf:make-field (protobuf:field-field-descriptor field) 
 			     (protobuf:field-value field))
 	(protobuf:make-field (protobuf:field-field-descriptor field))))
-
+      
   (define-record-type (protobuf:message protobuf:make-message protobuf:message?)
-    (fields fields)
-    (protocol (lambda (p) (lambda (fields) (p (map clone-field fields))))))
+    (fields fields))
   
   (define-record-type (protobuf:message-builder 
 		       protobuf:make-message-builder 
@@ -227,7 +249,7 @@
 				    " is required.")))))))
 
     (let* ((type (protobuf:message-builder-type b))
-	   (ctor (record-constructor 
+	   (ctor (record-constructor
 		  (make-record-constructor-descriptor type #f #f)))
 	   (fields (protobuf:message-builder-fields b)))
       (vector-for-each ensure-required fields)
@@ -272,70 +294,79 @@
   
   (define protobuf:field-type-double 
     (protobuf:make-field-type-descriptor 
-     (field-type double) (wire-type fixed64) write-double read-double real? 0))
+     (field-type double) 
+     (wire-type fixed64) protobuf:write-double read-double real? 0))
 
   (define protobuf:field-type-float 
     (protobuf:make-field-type-descriptor 
-     (field-type float) (wire-type fixed32) write-float read-float real? 0))
+     (field-type float) 
+     (wire-type fixed32) protobuf:write-float read-float real? 0))
 
   (define protobuf:field-type-int32 
     (protobuf:make-field-type-descriptor 
-     (field-type int32) (wire-type varint) write-int32 read-int32 int32? 0))
+     (field-type int32) 
+     (wire-type varint) protobuf:write-int32 read-int32 int32? 0))
 
   (define protobuf:field-type-int64 
     (protobuf:make-field-type-descriptor 
-     (field-type int64) (wire-type varint) write-int64 read-int64 int64? 0))
+     (field-type int64) 
+     (wire-type varint) protobuf:write-int64 read-int64 int64? 0))
 
   (define protobuf:field-type-uint32
     (protobuf:make-field-type-descriptor 
-     (field-type uint32) (wire-type varint) write-uint32 read-uint32 uint32? 0))
+     (field-type uint32) 
+     (wire-type varint) protobuf:write-uint32 read-uint32 uint32? 0))
 
   (define protobuf:field-type-uint64 
     (protobuf:make-field-type-descriptor
-     (field-type uint64) (wire-type varint) write-uint64 read-uint64 uint64? 0))
+     (field-type uint64) 
+     (wire-type varint) protobuf:write-uint64 read-uint64 uint64? 0))
 
   (define protobuf:field-type-sint32 
     (protobuf:make-field-type-descriptor 
-     (field-type sint32) (wire-type varint) write-sint32 read-sint32 int32? 0))
+     (field-type sint32) 
+     (wire-type varint) protobuf:write-sint32 read-sint32 int32? 0))
 
   (define protobuf:field-type-sint64 
     (protobuf:make-field-type-descriptor 
-     (field-type sint64) (wire-type varint) write-sint64 read-sint64 int64? 0))
+     (field-type sint64) 
+     (wire-type varint) protobuf:write-sint64 read-sint64 int64? 0))
 
   (define protobuf:field-type-fixed32 
     (protobuf:make-field-type-descriptor 
      (field-type fixed32) 
-     (wire-type fixed32) write-fixed32 read-fixed32 int32? 0))
+     (wire-type fixed32) protobuf:write-fixed32 read-fixed32 int32? 0))
 
   (define protobuf:field-type-fixed64 
     (protobuf:make-field-type-descriptor 
      (field-type fixed64) 
-     (wire-type fixed64) write-fixed64 read-fixed64 int64? 0))
+     (wire-type fixed64) protobuf:write-fixed64 read-fixed64 int64? 0))
 
   (define protobuf:field-type-sfixed32
     (protobuf:make-field-type-descriptor
      (field-type sfixed32)
-     (wire-type fixed32) write-sfixed32 read-sfixed32 int32? 0))
+     (wire-type fixed32) protobuf:write-sfixed32 read-sfixed32 int32? 0))
 
   (define protobuf:field-type-sfixed64 
     (protobuf:make-field-type-descriptor 
      (field-type sfixed64)
-     (wire-type fixed64) write-sfixed64 read-sfixed64 int64? 0))
+     (wire-type fixed64) protobuf:write-sfixed64 read-sfixed64 int64? 0))
 
   (define protobuf:field-type-bool
     (protobuf:make-field-type-descriptor 
-     (field-type bool) (wire-type varint) write-bool read-bool boolean? #f))
+     (field-type bool) 
+     (wire-type varint) protobuf:write-bool read-bool boolean? #f))
 
   (define protobuf:field-type-string
     (protobuf:make-field-type-descriptor
      (field-type string) 
-     (wire-type length-delimited) write-string read-string string? ""))
+     (wire-type length-delimited) protobuf:write-string read-string string? ""))
 
   (define protobuf:field-type-bytes
     (protobuf:make-field-type-descriptor 
      (field-type bytes) 
      (wire-type length-delimited) 
-     write-bytes read-bytes bytevector? (make-bytevector 0)))
+     protobuf:write-bytes read-bytes bytevector? (make-bytevector 0)))
 
   (define (protobuf:message-write obj port)    
     (define (write-field field)
@@ -350,7 +381,7 @@
       (define type-descriptor (protobuf:field-descriptor-type field-descriptor))
       (if (protobuf:field-has-value? field)
 	  (begin
-	    (write-varint 
+	    (protobuf:write-varint 
 	     port (bitwise-ior 
 		   (bitwise-arithmetic-shift-left
 		    (protobuf:field-descriptor-index field-descriptor) 3)
@@ -372,6 +403,8 @@
 	    ((0) (wire-type varint))
 	    ((1) (wire-type fixed64))
 	    ((2) (wire-type length-delimited))
+	    ((3) (wire-type start-group))
+	    ((4) (wire-type end-group))
 	    ((5) (wire-type fixed32))
 	    (else (raise (make-assertion-violation)))))
 	(let* ((field-header (read-varint port))
@@ -385,7 +418,17 @@
 				     (protobuf:field-field-descriptor field)))))
 		
 		(protobuf:set-field-value! field (deserializer port)))
-	      (raise (make-assertion-violation)))))
+
+	      ;; If we don't have metadata about the field, consume its content
+	      ;; based on its wire type and then discard it.
+
+	      (case wire-type
+		((varint) (read-varint port))
+		((fixed64) (read-fixed64 port))
+		((length-delimited) (read-string port))
+		((start-group) (read-string port))
+		((end-group) #f)
+		((fixed32) (read-fixed32 port))))))
 
       (if (port-eof? port)
 	  (protobuf:message-builder-build builder)
