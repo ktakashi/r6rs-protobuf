@@ -51,31 +51,25 @@
 		   (option2 (car options2)))
 	       (and (option-declaration-equal? option1 option2)
 		    (loop (cdr options1) (cdr options2))))))		   
+       
+       (package-equal? (protoc:proto-root-package p1)
+		       (protoc:proto-root-package p2))))
 
-       (let loop ((packages1 (protoc:proto-package-definitions p1))
-		  (packages2 (protoc:proto-package-definitions p2)))
-	 (cond ((null? packages1) (null? packages2))
-	       ((null? packages2) #f)
-	       (else (let ((package1 (car packages1))
-			   (package2 (car packages2)))
-		       (and (package-definition-equal? package1 package2)
-			    (loop (cdr packages1) (cdr packages2)))))))))
-
-(define (package-definition-equal? p1 p2)
-  (and (protoc:package-definition? p1)
-       (protoc:package-definition? p2)
-       (equal? (protoc:package-definition-name p1)
-	       (protoc:package-definition-name p2))
-       (let loop ((options1 (protoc:package-definition-options p1))
-		  (options2 (protoc:package-definition-options p2)))
+(define (package-equal? p1 p2)
+  (and (protoc:package? p1)
+       (protoc:package? p2)
+       (equal? (protoc:package-name p1)
+	       (protoc:package-name p2))
+       (let loop ((options1 (protoc:package-options p1))
+		  (options2 (protoc:package-options p2)))
 	 (if (null? options1)
 	     (null? options2)
 	     (let ((option1 (car options1))
 		   (option2 (car options2)))
 	       (and (option-declaration-equal? option1 option2)
 		    (loop (cdr options1) (cdr options2))))))		        
-       (let loop ((definitions1 (protoc:package-definition-definitions p1))
-		  (definitions2 (protoc:package-definition-definitions p2)))
+       (let loop ((definitions1 (protoc:package-definitions p1))
+		  (definitions2 (protoc:package-definitions p2)))
 	 (if (null? definitions1)
 	     (null? definitions2)
 	     (let ((definition1 (car definitions1))
@@ -83,7 +77,7 @@
 	       (cond ((and (protoc:message-definition? definition1)
 			   (protoc:message-definition? definition2))
 		      (and (message-definition-equal? definition1 definition2)
-			   (loop (cdr definitions1) (cdr definition2))))
+			   (loop (cdr definitions1) (cdr definitions2))))
 		     ((and (protoc:enum-definition? definition1)
 			   (protoc:enum-definition? definition2))
 		      (and (enum-definition-equal? definition1 definition2)
@@ -167,30 +161,36 @@
 
 (test-group "package"
   (let* ((p ((protoc:make-parser 
-	      (mock-lexer 'PACKAGE '(IDENTIFIER . "foo.bar.baz") 
-			  'SEMICOLON)))))
+	      (mock-lexer 'PACKAGE '(IDENTIFIER . "foo") 'SEMICOLON))))
+	 (target-root-package (protoc:make-package #f #f))
+	 (q (protoc:make-package "foo" target-root-package)))
+    (protoc:set-package-subpackages!
+     target-root-package 
+     (cons q (protoc:package-subpackages target-root-package)))
     (test-assert 
-     (proto-definition-equal? 
-      (protoc:make-proto (list (protoc:make-package-definition "foo.bar.baz")))
-      p))))
-(test-group "message"
+     (proto-definition-equal? (protoc:make-proto target-root-package) p))))
+
+ (test-group "message"
   (let* ((p ((protoc:make-parser 
-	      (mock-lexer 'MESSAGE '(IDENTIFIER . "Foo") 'LBRACE 'RBRACE)))))
+	      (mock-lexer 'MESSAGE '(IDENTIFIER . "Foo") 'LBRACE 'RBRACE))))
+	 (target-root-package (protoc:make-package #f #f))
+	 (q (protoc:make-message-definition "Foo")))
+    (protoc:set-package-definitions!
+     target-root-package 
+     (cons q (protoc:package-definitions target-root-package)))
     (test-assert 
-     (proto-definition-equal?
-      (protoc:make-proto 
-       (list (protoc:make-package-definition 
-	      #f (list (protoc:make-message-definition "Foo"))))) 
-      p))))
+     (proto-definition-equal? (protoc:make-proto target-root-package) p))))
+
 (test-group "enum"
   (let* ((p ((protoc:make-parser 
-	      (mock-lexer 'ENUM '(IDENTIFIER . "Foo") 'LBRACE 'RBRACE)))))
+	      (mock-lexer 'ENUM '(IDENTIFIER . "Foo") 'LBRACE 'RBRACE))))
+	 (target-root-package (protoc:make-package #f #f))
+	 (q (protoc:make-enum-definition "Foo")))
+    (protoc:set-package-definitions!
+     target-root-package
+     (cons q (protoc:package-definitions target-root-package)))
     (test-assert
-     (proto-definition-equal?
-      (protoc:make-proto 
-       (list (protoc:make-package-definition 
-	      #f (list (protoc:make-enum-definition "Foo"))))) 
-      p))))
+     (proto-definition-equal? (protoc:make-proto target-root-package) p))))
 
 (test-end "simple")
 (test-begin "enum")
