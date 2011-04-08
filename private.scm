@@ -213,15 +213,10 @@
      (lambda (p)
        (lambda (descriptor . value)
 	 (if (null? value)
-	     (p (protobuf:field-descriptor-default descriptor) descriptor #f)
+	     (p (protobuf:field-descriptor-default descriptor) 
+		descriptor (protobuf:field-descriptor-repeated? descriptor))
 	     (p (car value) descriptor #t))))))
 
-  (define (clone-field field)
-    (if (protobuf:field-has-value? field)
-	(protobuf:make-field (protobuf:field-field-descriptor field) 
-			     (protobuf:field-value field))
-	(protobuf:make-field (protobuf:field-field-descriptor field))))
-      
   (define-record-type (protobuf:message protobuf:make-message protobuf:message?)
     (fields fields))
   
@@ -229,14 +224,27 @@
 		       protobuf:make-message-builder 
 		       protobuf:message-builder?)
     (fields type fields)
-    (protocol 
-     (lambda (p) 
-       (lambda (type field-descriptors) 
-	 (define fields 
-	   (map (lambda (x) (protobuf:make-field x)) field-descriptors))
-	 (p type (list->vector fields))))))
+    (protocol (lambda (p) 
+		(lambda (type field-descriptors) 
+		  (p type (map (lambda (x) (protobuf:make-field x)) 
+			       field-descriptors))))))
      
   (define (protobuf:message-builder-build b)
+    (define (clone-field field)
+      (if (protobuf:field-has-value? field)	     
+	  (if (protobuf:field-descriptor-repeated?
+	       (protobuf:field-field-descriptor field))
+	      (protobuf:make-field 
+	       (protobuf:field-field-descriptor field)
+	       (list->vector (protobuf:field-value field)))
+	      (protobuf:make-field (protobuf:field-field-descriptor field) 
+				   (protobuf:field-value field)))
+	  (if (protobuf:field-descriptor-repeated?
+	       (protobuf:field-field-descriptor field))
+	      (protobuf:make-field 
+	       (protobuf:field-field-descriptor field) (vector))
+	      (protobuf:make-field (protobuf:field-field-descriptor field)))))
+      
     (define (ensure-required f)
       (let ((fd (protobuf:field-field-descriptor f)))
 	(if (and (protobuf:field-descriptor-required? fd)
@@ -252,35 +260,39 @@
 	   (ctor (record-constructor
 		  (make-record-constructor-descriptor type #f #f)))
 	   (fields (protobuf:message-builder-fields b)))
-      (vector-for-each ensure-required fields)
-      (let ((cfs (vector-map clone-field fields))) 
-	(apply ctor (cons cfs (vector->list
-			       (vector-map protobuf:field-value cfs)))))))
+      (for-each ensure-required fields)
+      (let ((cfs (map clone-field fields)))
+	(apply ctor (cons cfs (map protobuf:field-value cfs))))))
   
   (define (protobuf:message-builder-field builder index)
     (find (lambda (x)
 	    (eqv? (protobuf:field-descriptor-index 
 		   (protobuf:field-field-descriptor x)) 
 		  index))
-	  (vector->list (protobuf:message-builder-fields builder))))
+	  (protobuf:message-builder-fields builder)))
 
   (define (protobuf:set-field-value! field value)
     (let* ((field-descriptor (protobuf:field-field-descriptor field))
 	   (type-descriptor (protobuf:field-descriptor-type field-descriptor))
 	   (predicate (protobuf:field-type-descriptor-predicate 
 		       type-descriptor)))
-      (if (or (protobuf:field-descriptor-repeated? field-descriptor)
-	      (not (predicate value)))
-	  (raise (make-assertion-violation))
-	  (begin 
-	    (protobuf:set-field-value-internal! field value)
-	    (protobuf:set-field-has-value! field #t)))))
+      (if (protobuf:field-descriptor-repeated? field-descriptor)
+	  (begin (if (not (list? value))
+		     (raise (make-assertion-violation)))
+		 (if (not (for-all predicate value))
+		     (raise (make-assertion-violation))))
+	  (if (not (predicate value)) 
+	      (raise (make-assertion-violation))))
+
+      (protobuf:set-field-value-internal! field value)
+      (protobuf:set-field-has-value! field #t)))
 
   (define (protobuf:clear-field! field)
-    (protobuf:set-field-has-value! field #f)
-    (protobuf:set-field-value-internal! 
-     field (protobuf:field-descriptor-default 
-	    (protobuf:field-field-descriptor field))))
+    (let ((field-descriptor (protobuf:field-field-descriptor field)))
+      (if (not (protobuf:field-descriptor-repeated? field-descriptor))
+	  (protobuf:set-field-has-value! field #f))
+      (protobuf:set-field-value-internal!
+       field (protobuf:field-descriptor-default field-descriptor))))
 
   (define (int32? obj) 
     (and (integer? obj) (>= obj -2147483648) (<= obj 2147483647)))
@@ -379,23 +391,30 @@
 
       (define field-descriptor (protobuf:field-field-descriptor field))
       (define type-descriptor (protobuf:field-descriptor-type field-descriptor))
+      (define serialize (protobuf:field-type-descriptor-serializer 
+			 type-descriptor))
+      
+      (define (write-field-inner value)
+	(protobuf:write-varint 
+	 port (bitwise-ior
+	       (bitwise-arithmetic-shift-left
+		(protobuf:field-descriptor-index field-descriptor) 3)
+	       (wire-type->ordinal
+		(protobuf:field-type-descriptor-wire-type 
+		 type-descriptor))))
+
+	(serialize port value))
+
       (if (protobuf:field-has-value? field)
-	  (begin
-	    (protobuf:write-varint 
-	     port (bitwise-ior 
-		   (bitwise-arithmetic-shift-left
-		    (protobuf:field-descriptor-index field-descriptor) 3)
-		   (wire-type->ordinal
-		    (protobuf:field-type-descriptor-wire-type 
-		     type-descriptor))))
-	    (let ((writer (protobuf:field-type-descriptor-serializer 
-			   type-descriptor)))
-	      (writer port (protobuf:field-value field))))))
-    (vector-for-each write-field (protobuf:message-fields obj)))
+	  (if (protobuf:field-descriptor-repeated? field-descriptor)
+	      (vector-for-each write-field-inner (protobuf:field-value field))
+	      (write-field-inner (protobuf:field-value field)))))
+
+    (for-each write-field (protobuf:message-fields obj)))
     
   (define (protobuf:message-read builder port)
     (define field-table (make-hashtable (lambda (idx) idx) eqv?))
-
+    
     (define (read-fields)
       (define (read-field)
 	(define (ordinal->wire-type ordinal)
@@ -413,11 +432,16 @@
 	  
 	  (if (hashtable-contains? field-table field-number)
 	      (let* ((field (hashtable-ref field-table field-number #f))
+		     (field-descriptor (protobuf:field-field-descriptor field))
 		     (deserializer (protobuf:field-type-descriptor-deserializer
 				    (protobuf:field-descriptor-type 
-				     (protobuf:field-field-descriptor field)))))
-		
-		(protobuf:set-field-value! field (deserializer port)))
+				     field-descriptor))))
+
+		(if (protobuf:field-descriptor-repeated? field-descriptor)
+		    (protobuf:set-field-value! 
+		     field (append (protobuf:field-value field) 
+				   (list (deserializer port))))
+		    (protobuf:set-field-value! field (deserializer port))))
 
 	      ;; If we don't have metadata about the field, consume its content
 	      ;; based on its wire type and then discard it.
@@ -434,13 +458,12 @@
 	  (protobuf:message-builder-build builder)
 	  (begin (read-field) (read-fields))))    
     
-    (vector-for-each 
-     (lambda (field)
-       (hashtable-set! field-table 
-		       (protobuf:field-descriptor-index 
-			(protobuf:field-field-descriptor field)) 
-		       field))
-
-     (protobuf:message-builder-fields builder))
+    (for-each (lambda (field)
+		(hashtable-set! field-table 
+				(protobuf:field-descriptor-index 
+				 (protobuf:field-field-descriptor field)) 
+				field))
+	      
+	      (protobuf:message-builder-fields builder))
     (read-fields))
 )
