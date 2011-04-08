@@ -31,10 +31,13 @@
 
 	  protoc:make-package
 	  protoc:package
+	  protoc:package?
 	  protoc:package-name
 	  protoc:package-definitions
 	  protoc:package-options
 	  protoc:package-subpackages
+	  protoc:set-package-definitions!
+	  protoc:set-package-subpackages!
 	  
 	  protoc:make-message-definition
 	  protoc:message-definition?
@@ -88,6 +91,7 @@
 
   (define-record-type (protoc:package protoc:make-package protoc:package?)
     (fields name 
+	    parent
 	    (mutable definitions 
 		     protoc:package-definitions 
 		     protoc:set-package-definitions!)
@@ -99,12 +103,12 @@
 		     protoc:set-package-options!))
     (protocol 
      (lambda (p)
-       (lambda (name . rest)
+       (lambda (name parent . rest)
 	 (case (length rest)
-	   ((0) (p name '() '() '()))
-	   ((1) (p name (car rest) '() '()))
-	   ((2) (p name (car rest) (cadr rest) '()))
-	   ((3) (apply p (cons name rest)))
+	   ((0) (p name parent '() '() '()))
+	   ((1) (p name parent (car rest) '() '()))
+	   ((2) (p name parent (car rest) (cadr rest) '()))
+	   ((3) (apply p (cons name (cons parent rest))))
 	   (else (raise (make-assertion-violation))))))))
 
   (define-record-type (protobuf:extension-definition
@@ -174,7 +178,7 @@
 
     (define external-packages (make-hashtable string-hash equal?))
     (define internal-packages (make-hashtable string-hash equal?))
-    (define root-package (protoc:make-package #f))
+    (define root-package (protoc:make-package #f #f))
 
     (define proto (protoc:make-proto root-package))
     (define current-package root-package)
@@ -278,11 +282,11 @@
 	(assert-next-category 'IDENTIFIER)
 	(let* ((pkg-name (string-append pkg-name current-value))
 	       (package (hashtable-ref internal-packages pkg-name #f))
-	       (package 
+	       (package
 		(or package 
-		    (let ((p (protoc:make-package pkg-name)))
+		    (let ((p (protoc:make-package pkg-name parent)))
 		      (hashtable-set! internal-packages pkg-name p)
-		      (protoc:set-package-subpackages! 
+		      (protoc:set-package-subpackages!
 		       parent (cons p (protoc:package-subpackages parent)))
 		      p))))
 
