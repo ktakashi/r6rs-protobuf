@@ -220,7 +220,10 @@
 		  (reverse bindings)
 		  (let ((field (car fields)))
 		    (if (eq? (protoc:field-definition-rule field) 'repeated)
-			(loop (cdr fields) bindings)
+			(loop (cdr fields) 
+			      (append (list (field-accessor-name message field)
+					    (field-mutator-name message field)
+					    (field-clear-name message field))))
 			(loop (cdr fields)
 			      (append (list (field-accessor-name message field)
 					    (field-mutator-name message field)
@@ -334,18 +337,45 @@
     (define field-clear-name
       (protoc:builder-naming-context-field-clear-name builder-naming-context))
     
+    (define field-internal-mutators
+      (make-hashtable (lambda (f) (protoc:field-definition-ordinal f))
+		      (lambda (f1 f2)
+			(eqv? (protoc:field-definition-ordinal f1)
+			      (protoc:field-definition-ordinal f2)))))
+
+    (define (generate-field-clear message field)
+      (let-values (((b0) (gensym-values 'b0)))
+	`(define (,(field-clear-name message field) ,b0)
+	   (protobuf:clear-field! 
+	    (protobuf:message-builder-field
+	     ,b0 ,(protoc:field-definition-ordinal field)))
+	   (,(hashtable-ref field-internal-mutators field #f) ,b0 
+	    ,(calc-field-default field)))))
+
+    (define (generate-field-has-predicate message field)
+      (let-values (((b0) (gensym-values 'b0)))
+	`(define (,(field-has-name message field) ,b0)
+	   (protobuf:field-has-value?
+	    (protobuf:message-builder-field 
+	     ,b0 ,(protoc:field-definition-ordinal field))))))
+
+    (define (generate-field-mutator message field)
+      (let-values (((b0 b1) (gensym-values 'b0 'b1)))
+	`(define (,(field-mutator-name message field) ,b0 ,b1)
+	   (protobuf:set-field-value!
+	    (protobuf:message-builder-field
+	     ,b0 ,(protoc:field-definition-ordinal field)) ,b1)
+	   (,(hashtable-ref field-internal-mutators field #f) ,b0 ,b1))))
+    
     (define (calc-field-default field)
-      (protobuf:field-type-descriptor-default 
-       (protoc:type-reference-descriptor
-	(protoc:field-definition-type field))))
+      (if (eq? (protoc:field-definition-rule field) 'repeated)
+	  (quote '())
+	  (protobuf:field-type-descriptor-default 
+	   (protoc:type-reference-descriptor
+	    (protoc:field-definition-type field)))))
 
     (let-values (((b0 b1 b2 b3) (gensym-values 'b0 'b1 'b2 'b3)))
-      (let ((fields (protoc:message-definition-fields message))
-	    (field-internal-mutators
-	     (make-hashtable (lambda (f) (protoc:field-definition-ordinal f))
-			     (lambda (f1 f2)
-			       (eqv? (protoc:field-definition-ordinal f1)
-				     (protoc:field-definition-ordinal f2))))))
+      (let ((fields (protoc:message-definition-fields message)))
 	`((define-record-type (,(builder-type-name message)
 			       ,(builder-constructor-name message)
 			       ,(builder-predicate-name message))
@@ -388,31 +418,16 @@
 		  (reverse bindings)
 		  (let ((f (car fields)))
 		    (if (eq? (protoc:field-definition-rule f) 'repeated)
-			(loop (cdr fields) bindings)
-			(let ((mutator
-			       `(define (,(field-mutator-name message f) 
-					 ,b0 ,b1)
-				  (protobuf:set-field-value!
-				   (protobuf:message-builder-field
-				    ,b0 ,(protoc:field-definition-ordinal f))
-				   ,b1)
-				  (,(hashtable-ref field-internal-mutators f #f)
-				   ,b0 ,b1)))
-			      (has-predicate
-			       `(define (,(field-has-name message f) ,b0)
-				  (protobuf:field-has-value?
-				   (protobuf:message-builder-field 
-				    ,b0 ,(protoc:field-definition-ordinal 
-					  f)))))
-			      (clear 
-			       `(define (,(field-clear-name message f) ,b0)
-				  (protobuf:clear-field! 
-				   (protobuf:message-builder-field
-				    ,b0 ,(protoc:field-definition-ordinal
-					  f))))))
-			  (loop (cdr fields)
-				(append (list mutator has-predicate clear)
-					bindings)))))))
+			(loop (cdr fields) 
+			      (append (list (generate-field-mutator message f)
+					    (generate-field-clear message f))
+				      bindings))
+			(loop (cdr fields)
+			      (append 
+			       (list (generate-field-mutator message f)
+				     (generate-field-has-predicate message f)
+				     (generate-field-clear message f))
+			       bindings))))))
 	  
 	  (define (,(builder-build-name message) ,b0)
 	    (protobuf:message-builder-build ,b0))))))
