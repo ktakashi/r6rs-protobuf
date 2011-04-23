@@ -138,7 +138,13 @@
   (define-record-type (protoc:type-reference
 		       protoc:make-type-reference
 		       protoc:type-reference?)
-    (fields expr descriptor))
+    (fields name))
+
+  (define-record-type (protoc:primitive-type-reference
+		       protoc:make-primitive-type-reference
+		       protoc:primitive-type-reference?)
+    (parent protoc:type-reference)
+    (fields descriptor))
 
   (define-record-type (protoc:field-definition
 		       protoc:make-field-definition
@@ -228,53 +234,45 @@
     (define (parse-type)
       (get-token)
       (case current-category
-	((DOUBLE) 
-	 (protoc:make-type-reference 
-	  'protobuf:field-type-double protobuf:field-type-double))
-	((FLOAT) 
-	 (protoc:make-type-reference 
-	  'protobuf:field-type-float protobuf:field-type-float))
-	((INT32) 
-	 (protoc:make-type-reference
-	  'protobuf:field-type-int32 protobuf:field-type-int32))
-	((INT64) 
-	 (protoc:make-type-reference
-	  'protobuf:field-type-int64 protobuf:field-type-int64))
-	((UINT32) 
-	 (protoc:make-type-reference
-	  'protobuf:field-type-uint32 protobuf:field-type-uint32))
-	((UINT64) 
-	 (protoc:make-type-reference
-	  'protobuf:field-type-uint64 protobuf:field-type-uint64))	 
-	((SINT32)
-	 (protoc:make-type-reference
-	  'protobuf:field-type-sint32 protobuf:field-type-sint32))
-	((SINT64) 
-	 (protoc:make-type-reference
-	  'protobuf:field-type-sint64 protobuf:field-type-sint64))
-	((FIXED32) 
-	 (protoc:make-type-reference
-	  'protobuf:field-type-fixed32 protobuf:field-type-fixed32))
-	((FIXED64) 
-	 (protoc:make-type-reference 
-	  'protobuf:field-type-fixed64 protobuf:field-type-fixed64))
-	((SFIXED32)
-	 (protoc:make-type-reference
-	  'protobuf:field-type-sfixed32 protobuf:field-type-sfixed32))
-	((SFIXED64)
-	 (protoc:make-type-reference
-	  'protobuf:field-type-sfixed64 protobuf:field-type-sfixed64))
+	((DOUBLE) (protoc:make-primitive-type-reference 
+		   "double" protobuf:field-type-double))
+	((FLOAT) (protoc:make-primitive-type-reference 
+		  "float" protobuf:field-type-float))
+	((INT32) (protoc:make-primitive-type-reference 
+		  "int32" protobuf:field-type-int32))
+	((INT64) (protoc:make-primitive-type-reference
+		  "int64" protobuf:field-type-int64))
+	((UINT32) (protoc:make-primitive-type-reference
+		   "uint32" protobuf:field-type-uint32))
+	((UINT64) (protoc:make-primitive-type-reference
+		   "uint64" protobuf:field-type-uint64))	 
+	((SINT32) (protoc:make-primitive-type-reference
+		   "sint32" protobuf:field-type-sint32))
+	((SINT64) (protoc:make-primitive-type-reference
+		   "sint64" protobuf:field-type-sint64))
+	((FIXED32) (protoc:make-primitive-type-reference
+		    "fixed32" protobuf:field-type-fixed32))
+	((FIXED64) (protoc:make-primitive-type-reference 
+		    "fixed64" protobuf:field-type-fixed64))
+	((SFIXED32) (protoc:make-primitive-type-reference
+		     "sfixed32" protobuf:field-type-sfixed32))
+	((SFIXED64) (protoc:make-primitive-type-reference
+		     "sfixed64" protobuf:field-type-sfixed64))
 	((BOOL)
-	 (protoc:make-type-reference
-	  'protobuf:field-type-bool protobuf:field-type-bool))
-	((STRING) 
-	 (protoc:make-type-reference
-	  'protobuf:field-type-string protobuf:field-type-string))
-	((BYTES)
-	 (protoc:make-type-reference
-	  'protobuf:field-type-bytes protobuf:field-type-bytes))
-	((IDENTIFIER) (unexpected-token-error))
-	((DOT) (unexpected-token-error))
+	 (protoc:make-primitive-type-reference "bool" protobuf:field-type-bool))
+	((STRING) (protoc:make-primitive-type-reference 
+		   "string" protobuf:field-type-string))
+	((BYTES) (protoc:make-primitive-type-reference
+		  "bytes" protobuf:field-type-bytes))
+
+	((IDENTIFIER)
+	 (let loop ((name ""))
+	   (let ((val current-value))
+	     (get-token)
+	     (if (eq? current-category 'DOT)
+		 (loop (string-append name "." val))
+		 (begin (unget-token current-token) 
+			(protoc:make-type-reference name))))))
 	(else (unexpected-token-error))))
 
     (define (parse-package)
