@@ -17,8 +17,9 @@
 #!r6rs
 
 (library (protobuf private)
-  (export protobuf:field-type-descriptor-default
-          
+  (export protobuf:make-field-type-descriptor
+	  protobuf:field-type-descriptor-default
+
           protobuf:field-type-double
 	  protobuf:field-type-float
 	  protobuf:field-type-int32
@@ -39,7 +40,8 @@
 	  protobuf:make-field-descriptor
 	  protobuf:field-descriptor-default
 	  protobuf:field-descriptor-name
-	  
+
+	  protobuf:make-field
 	  protobuf:field-field-descriptor
 	  protobuf:field-value
 	  protobuf:field-has-value?
@@ -49,6 +51,7 @@
 	  protobuf:message-builder-build
 	  protobuf:message-builder-field
 	  
+	  protobuf:make-message
 	  protobuf:message-write
 	  protobuf:message-read
 
@@ -278,11 +281,29 @@
 		       type-descriptor)))
       (if (protobuf:field-descriptor-repeated? field-descriptor)
 	  (begin (if (not (list? value))
-		     (raise (make-assertion-violation)))
+		     (raise (condition
+			     (make-assertion-violation)
+			     (make-message-condition
+			      (string-append "Repeated field "
+					     (protobuf:field-descriptor-name 
+					      field-descriptor)
+					     " must be a list"))))
 		 (if (not (for-all predicate value))
-		     (raise (make-assertion-violation))))
+		     (raise (condition
+			     (make-assertion-violation)
+			     (make-message-condition
+			      (string-append 
+			       "Wrong type in value list for field "
+			       (protobuf:field-descriptor-name 
+				field-descriptor))))))))
+	  
 	  (if (not (predicate value)) 
-	      (raise (make-assertion-violation))))
+	      (raise (condition 
+		      (make-assertion-violation)
+		      (make-message-condition
+		       (string-append
+			"Wrong type for field " 
+			(protobuf:field-descriptor-name field-descriptor)))))))
 
       (protobuf:set-field-value-internal! field value)
       (protobuf:set-field-has-value! field #t)))
