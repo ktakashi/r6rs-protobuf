@@ -370,9 +370,38 @@
     (define (calc-field-default field)
       (if (eq? (protoc:field-definition-rule field) 'repeated)
 	  (quote '())
-	  (protobuf:field-type-descriptor-default 
-	   (protoc:type-reference-descriptor
-	    (protoc:field-definition-type field)))))
+	  (let ((tr (protoc:field-definition-type field)))
+	    (and (protoc:primitive-type-reference? tr)
+		 (protobuf:field-type-descriptor-default
+		  (protoc:primitive-type-reference-descriptor tr))))))
+
+    (define (type-reference->type-descriptor-expr type-ref)
+      (if (protoc:primitive-type-reference? type-ref)
+	  (case (protoc:primitive-type-reference-descriptor type-ref)
+	    ((protobuf:field-type-double) 'protobuf:field-type-double)
+	    ((protobuf:field-type-float) 'protobuf:field-type-float)
+	    ((protobuf:field-type-int32) 'protobuf:field-type-int32)
+	    ((protobuf:field-type-int64) 'protobuf:field-type-int64)
+	    ((protobuf:field-type-uint32) 'protobuf:field-type-uint32)
+	    ((protobuf:field-type-uint64) 'protobuf:field-type-uint64)
+	    ((protobuf:field-type-sint32) 'protobuf:field-type-sint32)
+	    ((protobuf:field-type-sint64) 'protobuf:field-type-sint64)
+	    ((protobuf:field-type-fixed32) 'protobuf:field-type-fixed32)
+	    ((protobuf:field-type-fixed64) 'protobuf:field-type-sfixed32)
+	    ((protobuf:field-type-sfixed32) 'protobuf:field-type-sfixed32)
+	    ((protobuf:field-type-sfixed64) 'protobuf:field-type-sfixed64)
+	    ((protobuf:field-type-bool) 'protobuf:field-type-bool)
+	    ((protobuf:field-type-string) 'protobuf:field-type-string)
+	    ((protobuf:field-type-bytes) 'protobuf:field-type-bytes)      
+	    (else (raise 
+		   (condition 
+		    (make-assertion-violation)
+		    (make-message-condition 
+		     (string-append "Unknown primitive type " 
+				    (protoc:type-reference-name type-ref)))))))
+	  (raise (condition (make-assertion-violation)
+			    (make-message-condition 
+			     "Non-primitive types are not supported")))))
 
     (let-values (((b0 b1 b2 b3) (gensym-values 'b0 'b1 'b2 'b3)))
       (let ((fields (protoc:message-definition-fields message)))
@@ -398,7 +427,7 @@
 				  `(protobuf:make-field-descriptor
 				    ,(protoc:field-definition-ordinal field)
 				    ,(protoc:field-definition-name field)
-				    ,(protoc:type-reference-expr
+				    ,(type-reference->type-descriptor-expr
 				      (protoc:field-definition-type field))
 				    ,(eq? (protoc:field-definition-rule field)
 					  'repeated)
