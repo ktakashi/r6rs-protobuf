@@ -41,7 +41,6 @@
   (bitwise-ior (bitwise-arithmetic-shift-left field-number 3) wire-type-num))
 
 (test-begin "unknown-fields")
-
 (test-group "varint"
   (let-values (((bv-out bv-transcoder) (open-bytevector-output-port)))
     (protobuf:write-varint bv-out (make-field-header 1 0))
@@ -105,4 +104,28 @@
 
 (test-end "unknown-fields")
 (test-end "read")
+
+(test-begin "write")
+
+(test-group "repeated"
+  (test-group "primitive"
+    (let* ((counter 0)
+	   (decorated-int32-serializer
+	    (lambda (p int32) 
+	      (set! counter (+ counter 1)) (protobuf:write-int32 p int32)))
+
+	   (ftd (protobuf:make-field-type-descriptor
+		 "test" 'varint decorated-int32-serializer #f integer? 0))
+	   
+	   (m (protobuf:make-message
+	       (list (protobuf:make-field
+		      (protobuf:make-field-descriptor 0 "test" ftd #t #f #f)
+		      (vector 1 2 3))))))
+
+      (let-values (((bv-out bv-transcoder) (open-bytevector-output-port)))
+	(protobuf:message-write m bv-out)
+	(test-equal 3 counter)))))
+
+(test-end "write")
+
 (test-end "private")
