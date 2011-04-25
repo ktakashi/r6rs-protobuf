@@ -19,6 +19,16 @@
 (library (protobuf private)
   (export protobuf:make-field-type-descriptor
 	  protobuf:field-type-descriptor-default
+	  protobuf:field-type-descriptor-name
+	  protobuf:field-type-descriptor-wire-type
+
+	  protobuf:make-message-field-type-descriptor
+	  protobuf:message-field-type-descriptor?
+	  protobuf:message-field-type-descriptor-definition
+
+	  protobuf:make-enum-field-type-descriptor
+	  protobuf:enum-field-type-descriptor?
+	  protobuf:enum-field-type-descriptor-definition
 
           protobuf:field-type-double
 	  protobuf:field-type-float
@@ -70,7 +80,9 @@
 	  protobuf:write-sfixed64
 	  protobuf:write-bool
 	  protobuf:write-string
-	  protobuf:write-bytes)
+	  protobuf:write-bytes
+	  protobuf:write-message)
+
   (import (rnrs))
 
   (define (zigzag-encode n bits)
@@ -151,6 +163,9 @@
     (protobuf:write-varint port (bytevector-length bytes)) 
     (put-bytevector port bytes))
 
+  (define (protobuf:write-message port message) 
+    (protobuf:message-write message port))
+
   (define (read-double port)
     (bytevector-ieee-double-ref 
      (get-bytevector-n port 8) 0 (endianness little)))
@@ -194,16 +209,22 @@
 		       protobuf:field-type-descriptor?)
     (fields name wire-type serializer deserializer predicate default))
 
+  (define-record-type (protobuf:message-field-type-descriptor
+		       protobuf:make-message-field-type-descriptor
+		       protobuf:message-field-type-descriptor?)
+    (parent protobuf:field-type-descriptor)
+    (fields definition))
+
+  (define-record-type (protobuf:enum-field-type-descriptor
+		       protobuf:make-enum-field-type-descriptor
+		       protobuf:enum-field-type-descriptor?)
+    (parent protobuf:field-type-descriptor)
+    (fields definition))
+
   (define-record-type (protobuf:field-descriptor
 		       protobuf:make-field-descriptor
 		       protobuf:field-descriptor?)
     (fields index name type repeated? required? default))
- 
-  (define-record-type (protobuf:message-field-descriptor
-		       protobuf:make-message-field-descriptor
-		       protobuf:message-field-descriptor?)
-    (parent field-descriptor)
-    (fields message-type))
 
   (define-record-type (protobuf:field protobuf:make-field protobuf:field?)
     (fields
