@@ -34,7 +34,7 @@
   (define-record-type (protoc:enum-naming-context
 		       protoc:make-enum-naming-context
 		       protoc:eum-naming-context?)
-    (fields type-name constructor-name value-name))
+    (fields type-name constructor-name predicate-name value-name))
 
   (define-record-type (protoc:message-naming-context
 		       protoc:make-message-naming-context
@@ -76,10 +76,12 @@
   (define protoc:default-enum-naming-context
     (protoc:make-enum-naming-context
      (lambda (enum) (string->symbol (protoc:enum-definition-name enum)))
-     (lambda (enum) 
+     (lambda (enum)
        (string->symbol 
 	(string-append "make-" (protoc:enum-definition-name enum))))
-     (lambda (enum value) 
+     (lambda (enum)
+       (string->symbol (string-append (protoc:enum-definition-name enum) "?")))
+     (lambda (enum value)
        (string->symbol 
 	(string-append (protoc:enum-definition-name enum) "-" 
 		       (protoc:enum-value-definition-name value))))))
@@ -155,7 +157,12 @@
     `(library ,((protoc:naming-context-library-name naming-context) 
 		(protoc:package-name package))
        (export ,@(protoc:package-exports package naming-context))
-       (import ,@default-imports)
+       (import 
+	,@(append default-imports
+		  (map (lambda (p) 
+			 ((protoc:naming-context-library-name naming-context)
+			  (protoc:package-name p)))
+		       (protoc:package-required-packages package))))
        ,@(let loop ((definitions 
 		      (protoc:package-definitions package))
 		    (output '()))
@@ -310,6 +317,8 @@
 	  (protobuf:message-read (,(builder-constructor-name message)) ,r0)))))
 
   (define (protoc:generate-builder message naming-context)
+    (define enum-naming-context
+      (protoc:naming-context-enum-naming-context naming-context))
     (define message-naming-context 
       (protoc:naming-context-message-naming-context naming-context))
     (define builder-naming-context 
@@ -317,6 +326,11 @@
 
     (define message-type-name
       (protoc:message-naming-context-type-name message-naming-context))
+    (define message-predicate-name
+      (protoc:message-naming-context-predicate-name message-naming-context))
+
+    (define enum-predicate-name
+      (protoc:enum-naming-context-predicate-name enum-naming-context))
 
     (define builder-type-name
       (protoc:builder-naming-context-type-name builder-naming-context))
@@ -370,38 +384,77 @@
     (define (calc-field-default field)
       (if (eq? (protoc:field-definition-rule field) 'repeated)
 	  (quote '())
-	  (let ((tr (protoc:field-definition-type field)))
-	    (and (protoc:primitive-type-reference? tr)
-		 (protobuf:field-type-descriptor-default
-		  (protoc:primitive-type-reference-descriptor tr))))))
+	  (protobuf:field-type-descriptor-default
+	   (protoc:type-reference-descriptor 
+	    (protoc:field-definition-type field)))))
 
     (define (type-reference->type-descriptor-expr type-ref)
-      (if (protoc:primitive-type-reference? type-ref)
-	  (case (protoc:primitive-type-reference-descriptor type-ref)
-	    ((protobuf:field-type-double) 'protobuf:field-type-double)
-	    ((protobuf:field-type-float) 'protobuf:field-type-float)
-	    ((protobuf:field-type-int32) 'protobuf:field-type-int32)
-	    ((protobuf:field-type-int64) 'protobuf:field-type-int64)
-	    ((protobuf:field-type-uint32) 'protobuf:field-type-uint32)
-	    ((protobuf:field-type-uint64) 'protobuf:field-type-uint64)
-	    ((protobuf:field-type-sint32) 'protobuf:field-type-sint32)
-	    ((protobuf:field-type-sint64) 'protobuf:field-type-sint64)
-	    ((protobuf:field-type-fixed32) 'protobuf:field-type-fixed32)
-	    ((protobuf:field-type-fixed64) 'protobuf:field-type-sfixed32)
-	    ((protobuf:field-type-sfixed32) 'protobuf:field-type-sfixed32)
-	    ((protobuf:field-type-sfixed64) 'protobuf:field-type-sfixed64)
-	    ((protobuf:field-type-bool) 'protobuf:field-type-bool)
-	    ((protobuf:field-type-string) 'protobuf:field-type-string)
-	    ((protobuf:field-type-bytes) 'protobuf:field-type-bytes)      
-	    (else (raise 
-		   (condition 
-		    (make-assertion-violation)
-		    (make-message-condition 
-		     (string-append "Unknown primitive type " 
-				    (protoc:type-reference-name type-ref)))))))
-	  (raise (condition (make-assertion-violation)
-			    (make-message-condition 
-			     "Non-primitive types are not supported")))))
+      (define p0 (gensym-values 'p0))
+      (define (message-field-type-descriptor-expr descriptor)
+	`(protobuf:make-message-field-type-descriptor
+	  ,(protobuf:field-type-descriptor-name descriptor)
+	  ,(list 'quote (protobuf:field-type-descriptor-wire-type descriptor))
+	  protobuf:write-message
+	  (lambda (,p0)
+	    (protobuf:message-read 
+	     (,(builder-constructor-name 
+		(protobuf:message-field-type-descriptor-definition 
+		 descriptor))) 
+	     ,p0))
+	  ,(message-predicate-name 
+	    (protobuf:message-field-type-descriptor-definition descriptor))
+	  ,(protobuf:field-type-descriptor-default descriptor)))
+
+      (define (enum-field-type-descriptor-expr descriptor)
+	`(protobuf:make-enum-field-type-descriptor
+	  ,(protobuf:field-type-descriptor-name descriptor)
+	  ,(list 'quote (protobuf:field-type-descriptor-wire-type descriptor))
+	  protobuf:write-varint
+	  protobuf:read-varint
+	  ,(enum-predicate-name
+	    (protobuf:enum-field-type-descriptor-definition descriptor))
+	  ,(protobuf:field-type-descriptor-default descriptor)))
+
+      (let ((descriptor (protoc:type-reference-descriptor type-ref)))	
+	(cond
+	  ((eq? descriptor protobuf:field-type-double)
+	   'protobuf:field-type-double)
+	  ((eq? descriptor protobuf:field-type-float) 
+	   'protobuf:field-type-float)
+	  ((eq? descriptor protobuf:field-type-int32) 
+	   'protobuf:field-type-int32)
+	  ((eq? descriptor protobuf:field-type-int64) 
+	   'protobuf:field-type-int64)
+	  ((eq? descriptor protobuf:field-type-uint32) 
+	   'protobuf:field-type-uint32)
+	  ((eq? descriptor protobuf:field-type-uint64) 
+	   'protobuf:field-type-uint64)
+	  ((eq? descriptor protobuf:field-type-sint32) 
+	   'protobuf:field-type-sint32)
+	  ((eq? descriptor protobuf:field-type-sint64) 
+	   'protobuf:field-type-sint64)
+	  ((eq? descriptor protobuf:field-type-fixed32) 
+	   'protobuf:field-type-fixed32)
+	  ((eq? descriptor protobuf:field-type-fixed64) 
+	   'protobuf:field-type-sfixed32)
+	  ((eq? descriptor protobuf:field-type-sfixed32) 
+	   'protobuf:field-type-sfixed32)
+	  ((eq? descriptor protobuf:field-type-sfixed64) 
+	   'protobuf:field-type-sfixed64)
+	  ((eq? descriptor protobuf:field-type-bool) 
+	   'protobuf:field-type-bool)
+	  ((eq? descriptor protobuf:field-type-string) 
+	   'protobuf:field-type-string)
+	  ((eq? descriptor protobuf:field-type-bytes) 
+	   'protobuf:field-type-bytes)      
+	  
+	  ;; It must be a user-defined type
+	  
+	  ((protobuf:message-field-type-descriptor? descriptor)
+	   (message-field-type-descriptor-expr descriptor))
+	  ((protobuf:enum-field-type-descriptor? descriptor)
+	   (enum-field-type-descriptor-expr descriptor))
+	  (else (raise (make-assertion-violation))))))
 
     (let-values (((b0 b1 b2 b3) (gensym-values 'b0 'b1 'b2 'b3)))
       (let ((fields (protoc:message-definition-fields message)))

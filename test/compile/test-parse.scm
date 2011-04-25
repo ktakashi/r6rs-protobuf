@@ -174,7 +174,7 @@
   (let* ((p ((protoc:make-parser 
 	      (mock-lexer 'MESSAGE '(IDENTIFIER . "Foo") 'LBRACE 'RBRACE))))
 	 (target-root-package (protoc:make-package #f #f))
-	 (q (protoc:make-message-definition "Foo")))
+	 (q (protoc:make-message-definition "Foo" target-root-package)))
     (protoc:set-package-definitions!
      target-root-package 
      (cons q (protoc:package-definitions target-root-package)))
@@ -185,7 +185,7 @@
   (let* ((p ((protoc:make-parser 
 	      (mock-lexer 'ENUM '(IDENTIFIER . "Foo") 'LBRACE 'RBRACE))))
 	 (target-root-package (protoc:make-package #f #f))
-	 (q (protoc:make-enum-definition "Foo")))
+	 (q (protoc:make-enum-definition "Foo" target-root-package)))
     (protoc:set-package-definitions!
      target-root-package
      (cons q (protoc:package-definitions target-root-package)))
