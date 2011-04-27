@@ -66,6 +66,8 @@
 	    message-naming-context
 	    builder-naming-context))
 
+  (define default-package-name "protobuf.default")
+
   (define (gensym-values . vars) 
     (apply values (syntax->datum (generate-temporaries vars))))
 
@@ -73,39 +75,54 @@
     (map string->symbol 
 	 (string-tokenize package (char-set-complement (char-set #\.)))))
 
-  (define protoc:default-enum-naming-context
+  (define (type-name-recursive def)
+    (define (type-name-recursive-inner def suffix)
+      (cond ((protoc:message-definition? def)
+	     (if (protoc:message-definition-parent def)
+		 (type-name-recursive-inner 
+		  (protoc:message-definition-parent def)
+		  (string-append 
+		   "-" (protoc:message-definition-name def) suffix))
+		 (string-append (protoc:message-definition-name def) suffix)))
+	    ((protoc:enum-definition? def)
+	     (if (protoc:enum-definition-parent def)
+		 (type-name-recursive-inner 
+		  (protoc:enum-definition-parent def)
+		  (string-append "-" (protoc:enum-definition-name def) suffix))
+		 (string-append (protoc:enum-definition-name def) suffix)))
+	    (else (raise (make-assertion-violation)))))
+    (type-name-recursive-inner def ""))
+
+  (define protoc:default-enum-naming-context    
     (protoc:make-enum-naming-context
-     (lambda (enum) (string->symbol (protoc:enum-definition-name enum)))
+     (lambda (enum) (string->symbol (type-name-recursive enum)))
      (lambda (enum)
-       (string->symbol 
-	(string-append "make-" (protoc:enum-definition-name enum))))
+       (string->symbol (string-append "make-" (type-name-recursive enum))))
      (lambda (enum)
-       (string->symbol (string-append (protoc:enum-definition-name enum) "?")))
+       (string->symbol (string-append (type-name-recursive enum) "?")))
      (lambda (enum value)
        (string->symbol 
-	(string-append (protoc:enum-definition-name enum) "-" 
+	(string-append (type-name-recursive enum) "-" 
 		       (protoc:enum-value-definition-name value))))))
 
   (define (default-message-builder-name message)
-    (string-append (protoc:message-definition-name message) "-builder"))
+    (string-append (type-name-recursive message) "-builder"))
 
   (define protoc:default-message-naming-context 
     (protoc:make-message-naming-context 
      (lambda (message)
-       (string->symbol (protoc:message-definition-name message)))
+       (string->symbol (type-name-recursive message)))
      (lambda (message) 
        (string->symbol 
-	(string-append (protoc:message-definition-name message) "?")))
+	(string-append (type-name-recursive message) "?")))
      (lambda (message field) 
        (string->symbol
-	(string-append (protoc:message-definition-name message) "-"
+	(string-append (type-name-recursive message) "-"
 		       (protoc:field-definition-name field))))
      (lambda (message)
-       (string->symbol
-	(string-append (protoc:message-definition-name message) "-write")))
+       (string->symbol (string-append (type-name-recursive message) "-write")))
      (lambda (message)
-       (string->symbol
-	(string-append (protoc:message-definition-name message) "-read")))))
+       (string->symbol (string-append (type-name-recursive message) "-read")))))
 
   (define protoc:default-builder-naming-context
     (protoc:make-builder-naming-context
@@ -154,14 +171,26 @@
     (define builder-naming-context 
       (protoc:naming-context-builder-naming-context naming-context))
 
+    (define (generate-definition definition)
+      (cond ((protoc:message-definition? definition)
+	     (append
+	      (protoc:generate-message definition naming-context)
+	      (protoc:generate-builder definition naming-context)
+	      (apply append
+		     (map generate-definition 
+			  (protoc:message-definition-definitions definition)))))
+	    ((protoc:enum-definition? definition)
+	     (protoc:generate-enum definition enum-naming-context))
+	    (else '())))
+
     `(library ,((protoc:naming-context-library-name naming-context) 
-		(protoc:package-name package))
+		(or (protoc:package-name package) default-package-name))
        (export ,@(protoc:package-exports package naming-context))
        (import 
 	,@(append default-imports
 		  (map (lambda (p) 
 			 ((protoc:naming-context-library-name naming-context)
-			  (protoc:package-name p)))
+			  (or (protoc:package-name p) default-package-name)))
 		       (protoc:package-required-packages package))))
        ,@(let loop ((definitions 
 		      (protoc:package-definitions package))
@@ -169,23 +198,9 @@
 	   (if (or (not definitions) (null? definitions))
 	       (reverse output)
 	       (let ((definition (car definitions)))
-		 (cond ((protoc:message-definition? definition)
-			(loop (cdr definitions) 
-			      (append
-			       (protoc:generate-message 
-				definition naming-context)
-			       (protoc:generate-builder 
-				definition naming-context)
-			       output)))
-		       ((protoc:enum-definition? definition)
-			(loop (cdr definitions)
-			      (append
-			       (protoc:generate-enum 
-				definition enum-naming-context)
-			       output)))
-			
-		       (else (loop (cdr definitions) output))))))))
-
+		 (loop (cdr definitions) 
+		       (append output (generate-definition definition))))))))
+  
   (define (protoc:enum-exports enum enum-naming-context)
     (list ((protoc:enum-naming-context-type-name enum-naming-context) enum)
 	  ((protoc:enum-naming-context-constructor-name enum-naming-context)
@@ -246,25 +261,25 @@
     (define builder-naming-context
       (protoc:naming-context-builder-naming-context naming-context))
 
+    (define (generate-export definition)
+      (cond ((protoc:message-definition? definition)
+	     (append 
+	      (protoc:message-exports definition message-naming-context)
+	      (protoc:builder-exports definition builder-naming-context)
+	      (apply append 
+		     (map generate-export 
+			  (protoc:message-definition-definitions definition)))))
+	    ((protoc:enum-definition? definition)
+	     (protoc:enum-exports definition enum-naming-context))
+	    (else '())))
+
     (let loop ((definitions (protoc:package-definitions package))
 	       (output '()))
       (if (or (not definitions) (null? definitions))
 	  (reverse output)
 	  (let ((definition (car definitions)))
-	    (cond ((protoc:message-definition? definition)
-		   (loop (cdr definitions)
-			 (append (protoc:message-exports 
-				  definition message-naming-context)
-				 (protoc:builder-exports 
-				  definition builder-naming-context)
-				 output)))
-		  ((protoc:enum-definition? definition)
-		   (loop (cdr definitions)
-			 (append (protoc:enum-exports
-				  definition enum-naming-context)
-				 output)))
-			 
-		  (else (loop (cdr definitions) output)))))))
+	    (loop (cdr definitions)
+		  (append output (generate-export definition)))))))
 
   (define (protoc:generate-enum enum enum-naming-context)
     (define enum-type-name 
@@ -493,7 +508,7 @@
 		 (let ((,b3 (,b1 ,(message-type-name message) ,b2)))
 		   (apply ,b3 (map protobuf:field-descriptor-default ,b2))))))
 	    (sealed #t))
-
+	  
 	  ,@(let loop ((fields fields)
 		       (bindings (list)))
 	      (if (null? fields)

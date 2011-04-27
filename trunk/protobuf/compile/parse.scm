@@ -43,14 +43,17 @@
 	  protoc:make-message-definition
 	  protoc:message-definition?
 	  protoc:message-definition-name
+	  protoc:message-definition-definitions
 	  protoc:message-definition-fields
 	  protoc:message-definition-options
+	  protoc:message-definition-parent
 
 	  protoc:make-enum-definition
 	  protoc:enum-definition?
 	  protoc:enum-definition-name
 	  protoc:enum-definition-values
 	  protoc:enum-definition-options
+	  protoc:enum-definition-parent
 	  
 	  protoc:make-enum-value-definition
 	  protoc:enum-value-definition?
@@ -360,11 +363,13 @@
 			    (else (raise (make-assertion-violation)))))
 		    (required-packages (protoc:package-required-packages 
 					package)))
-		(if (not (memp (lambda (p) 
-				 (equal? (protoc:package-name p)
-					 (protoc:package-name 
-					  definition-package)))
-			       required-packages))
+		(if (and (not (equal? (protoc:package-name definition-package)
+				      (protoc:package-name package)))
+			 (not (memp (lambda (p) 
+				      (equal? (protoc:package-name p)
+					      (protoc:package-name 
+					       definition-package)))
+				    required-packages)))
 		    (protoc:set-package-required-packages! 
 		     package (cons definition-package required-packages))))
 	      (protoc:set-type-reference-descriptor! type-reference descriptor))
@@ -461,7 +466,7 @@
 	(merge-package root-package (protoc:proto-root-package proto)))
       (assert-next-category 'SEMICOLON))
 
-    (define (parse-enum)
+    (define (parse-enum parent)
       (define (parse-enum-elements enum)
 	(define (parse-enum-field field-name)
 	  (assert-next-category 'EQUAL)
@@ -483,11 +488,12 @@
 	  (else (unexpected-token-error))))
 
       (assert-next-category 'IDENTIFIER)
-      (let ((enum (protoc:make-enum-definition current-value current-package)))
+      (let ((enum (protoc:make-enum-definition 
+		   current-value current-package parent)))
 	(assert-next-category 'LBRACE)
 	(parse-enum-elements enum)))
 
-    (define (parse-message)
+    (define (parse-message parent)
       (define (parse-message-element message-def)
 	(define (parse-field rule)
 	  (define (parse-maybe-field-options) #f)
@@ -516,14 +522,14 @@
 	  ((ENUM) 
 	   (protoc:set-message-definition-definitions!
 	    message-def 
-	    (cons (parse-enum) (protoc:message-definition-definitions 
-				message-def)))
+	    (cons (parse-enum message-def) 
+		  (protoc:message-definition-definitions message-def)))
 	   (parse-message-element message-def))
 	  ((MESSAGE)
 	   (protoc:set-message-definition-definitions!
 	    message-def
-	    (cons (parse-message) (protoc:message-definition-definitions 
-				   message-def)))
+	    (cons (parse-message message-def) 
+		  (protoc:message-definition-definitions message-def)))
 	   (parse-message-element message-def))
 	  ((OPTIONAL)
 	   (protoc:set-message-definition-fields!
@@ -546,7 +552,7 @@
       (assert-next-category 'IDENTIFIER)
       (let ((name current-value))
 	(assert-next-category 'LBRACE)
-	(let ((md (protoc:make-message-definition name current-package)))
+	(let ((md (protoc:make-message-definition name current-package parent)))
 	  (parse-message-element md))))
     
     (define (parse-proto)
@@ -554,14 +560,14 @@
 	(get-token)
 	(case current-category
 	  ((ENUM) 
-	   (let ((enum (parse-enum)))
+	   (let ((enum (parse-enum #f)))
 	     (protoc:set-package-definitions!
 	      current-package (cons enum (protoc:package-definitions
 					  current-package))))
 	   (parse-proto-elements))
 	  ((IMPORT) (parse-import) (parse-proto-elements))
 	  ((MESSAGE)
-	   (let ((message (parse-message)))
+	   (let ((message (parse-message #f)))
 	     (protoc:set-package-definitions!
 	      current-package (cons message (protoc:package-definitions 
 					     current-package))))
