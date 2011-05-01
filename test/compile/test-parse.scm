@@ -126,6 +126,14 @@
 	       (and (option-declaration-equal? option1 option2)
 		    (loop (cdr options1) (cdr options2))))))))
 
+(define (extension-range-definition-equal? e1 e2)
+  (and (protoc:extension-range-definition? e1)
+       (protoc:extension-range-definition? e2)
+       (eqv? (protoc:extension-range-definition-from e1)
+	     (protoc:extension-range-definition-from e2))
+       (eqv? (protoc:extension-range-definition-to e1)
+	     (protoc:extension-range-definition-to e2))))
+
 (define (enum-value-definition-equal? v1 v2)
   (and (protoc:enum-value-definition? v1)
        (protoc:enum-value-definition? v2)
@@ -203,4 +211,68 @@
     (test-assert p)))
 
 (test-end "enum")
+(test-begin "message")
+
+(test-group "extension-ranges"
+  (let* ((p ((protoc:make-parser
+	      (mock-lexer 'MESSAGE 
+			  '(IDENTIFIER . "Foo")
+			  'LBRACE
+			  'EXTENSIONS
+			  '(NUM-INTEGER . 1)
+			  'TO
+			  '(NUM-INTEGER . 3)
+			  'SEMICOLON
+			  'RBRACE))))
+	 (target-root-package (protoc:make-package #f #f))
+	 (q (protoc:make-message-definition "Foo" target-root-package)))
+    (protoc:set-message-definition-extension-ranges!
+     q (list (protoc:make-extension-range-definition 1 3)))
+    (protoc:set-package-definitions!
+     target-root-package
+     (cons q (protoc:package-definitions target-root-package)))
+    (test-assert
+     (proto-definition-equal? (protoc:make-proto target-root-package) p)))
+
+  (let* ((p ((protoc:make-parser
+	      (mock-lexer 'MESSAGE 
+			  '(IDENTIFIER . "Foo")
+			  'LBRACE
+			  'EXTENSIONS
+			  '(NUM-INTEGER . 1)
+			  'SEMICOLON
+			  'RBRACE))))
+	 (target-root-package (protoc:make-package #f #f))
+	 (q (protoc:make-message-definition "Foo" target-root-package)))
+    (protoc:set-message-definition-extension-ranges!
+     q (list (protoc:make-extension-range-definition 1 1)))
+    (protoc:set-package-definitions!
+     target-root-package
+     (cons q (protoc:package-definitions target-root-package)))
+    (test-assert
+     (proto-definition-equal? (protoc:make-proto target-root-package) p)))
+
+  (let* ((p ((protoc:make-parser
+	      (mock-lexer 'MESSAGE 
+			  '(IDENTIFIER . "Foo")
+			  'LBRACE
+			  'EXTENSIONS
+			  '(NUM-INTEGER . 1)
+			  'COMMA
+			  '(NUM-INTEGER . 2)
+			  'COMMA
+			  '(NUM-INTEGER . 3)
+			  'SEMICOLON
+			  'RBRACE))))
+	 (target-root-package (protoc:make-package #f #f))
+	 (q (protoc:make-message-definition "Foo" target-root-package)))
+    (protoc:set-message-definition-extension-ranges!
+     q (list (protoc:make-extension-range-definition 1 1)))
+    (protoc:set-package-definitions!
+     target-root-package
+     (cons q (protoc:package-definitions target-root-package)))
+    (test-assert
+     (proto-definition-equal? (protoc:make-proto target-root-package) p))))
+
+(test-end "message")
 (test-end "parse")

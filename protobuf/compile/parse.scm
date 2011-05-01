@@ -44,9 +44,16 @@
 	  protoc:message-definition?
 	  protoc:message-definition-name
 	  protoc:message-definition-definitions
+	  protoc:message-definition-extension-ranges
 	  protoc:message-definition-fields
 	  protoc:message-definition-options
 	  protoc:message-definition-parent
+	  protoc:set-message-definition-extension-ranges!
+
+	  protoc:make-extension-range-definition
+	  protoc:extension-range-definition?
+	  protoc:extension-range-definition-from
+	  protoc:extension-range-definition-to
 
 	  protoc:make-enum-definition
 	  protoc:enum-definition?
@@ -124,9 +131,10 @@
 	   ((4) (apply p (cons name (cons parent rest))))
 	   (else (raise (make-assertion-violation))))))))
 
-  (define-record-type (protobuf:extension-definition
-		       protobuf:make-extension-definition
-		       protobuf:extension-definition?))
+  (define-record-type (protoc:extension-range-definition
+		       protoc:make-extension-range-definition
+		       protoc:extension-range-definition?)
+    (fields from to))
 
   (define-record-type (protoc:option-declaration
 		       protoc:make-option-declaration
@@ -139,6 +147,9 @@
     (fields name
 	    parent
 	    package
+	    (mutable extension-ranges
+		     protoc:message-definition-extension-ranges
+		     protoc:set-message-definition-extension-ranges!)
 	    (mutable options 
 		     protoc:message-definition-options
 		     protoc:set-message-definition-options!)
@@ -495,6 +506,35 @@
 
     (define (parse-message parent)
       (define (parse-message-element message-def)
+	(define (parse-extension-ranges)
+	  (define (parse-extension-range-element exts)
+	    (assert-next-category 'NUM-INTEGER)
+	    (let ((from current-value))
+	      (get-token)
+	      (case current-category
+		((COMMA) 
+		 (parse-extension-range-element 
+		  (cons (protoc:make-extension-range-definition from from)
+			exts)))
+		((SEMICOLON)
+		 (reverse 
+		  (cons (protoc:make-extension-range-definition from from) 
+			exts)))
+		((TO)
+		 (get-token)
+		 (let* ((to (case current-category
+			      ((NUM-INTEGER) current-value)
+			      ((MAX) 536870911)
+			      (else (raise (make-assertion-violation)))))
+			(ext (protoc:make-extension-range-definition from to)))
+		   (get-token)
+		   (case current-category
+		     ((COMMA) (parse-extension-range-element (cons ext exts)))
+		     ((SEMICOLON) (reverse (cons ext exts)))
+		     (else (raise (make-assertion-violation))))))
+		(else (raise (make-assertion-violation))))))
+	  (parse-extension-range-element (list)))
+
 	(define (parse-field rule)
 	  (define (parse-maybe-field-options) #f)
 
@@ -524,6 +564,10 @@
 	    message-def 
 	    (cons (parse-enum message-def) 
 		  (protoc:message-definition-definitions message-def)))
+	   (parse-message-element message-def))
+	  ((EXTENSIONS)
+	   (protoc:set-message-definition-extension-ranges! 
+	    message-def (parse-extension-ranges))
 	   (parse-message-element message-def))
 	  ((MESSAGE)
 	   (protoc:set-message-definition-definitions!
