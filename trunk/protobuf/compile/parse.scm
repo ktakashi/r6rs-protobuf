@@ -71,6 +71,7 @@
 	  protoc:type-reference?
 	  protoc:type-reference-name
 	  protoc:type-reference-descriptor
+	  protoc:type-reference-location
 	  
 	  protoc:make-field-definition
 	  protoc:field-definition?
@@ -161,16 +162,24 @@
 		     protoc:set-message-definition-definitions!))
     (protocol 
      (lambda (p) 
-       (lambda (name package . parent) 
-	 (p name (if (null? parent) #f (car parent)) package  '() '() '())))))
+       (lambda (name package . parent)
+	 (p name (and (not (null? parent)) (car parent)) 
+	    package  '() '() '() '())))))
 
   (define-record-type (protoc:type-reference
 		       protoc:make-type-reference
 		       protoc:type-reference?)
-    (fields name 
+    (fields name
 	    (mutable descriptor
 		     protoc:type-reference-descriptor
-		     protoc:set-type-reference-descriptor!)))
+		     protoc:set-type-reference-descriptor!)
+	    (mutable location
+		     protoc:type-reference-location
+		     protoc:set-type-reference-location!))
+    (protocol
+     (lambda (p)
+       (lambda (name . descriptor)
+	 (p name (and (not (null? descriptor)) (car descriptor)) #f)))))
 
   (define-record-type (protoc:field-definition
 		       protoc:make-field-definition
@@ -213,7 +222,7 @@
   (define (merge-package! scope package) #f)
 
   (define (protoc:make-parser lexer)
-    (define unresolved-type-fields (list))
+    (define unresolved-type-references (list))
     (define resolved-type-descriptors (make-hashtable string-hash equal?))
 
     (define external-packages (make-hashtable string-hash equal?))
@@ -265,7 +274,7 @@
       (if (not (eq? current-category category))
 	  (unexpected-token-error)))
 
-    (define (resolve-type p)
+    (define (resolve-type type-reference)
       (define (resolve-type-relative name context)
 	(define (resolve-type-relative-inner components context)
 	  (let* ((first-component (car components))
@@ -349,11 +358,10 @@
 	       (enum-definition->descriptor definition))
 	      (else raise (make-assertion-violation))))
 
-      (let* ((name (car p))
-	     (field (cdr p))
+      (let* ((field (protoc:type-reference-location type-reference))
+	     (name (protoc:type-reference-name type-reference))
 	     (message (protoc:field-definition-message field))
 	     (package (protoc:message-definition-package message))
-	     (type-reference (protoc:field-definition-type field))
 	     (descriptor (hashtable-ref resolved-type-descriptors name #f))
 	     (definition (and (not descriptor)
 			      (or (resolve-type-upwards name message)
@@ -392,30 +400,30 @@
     (define (parse-type)
       (get-token)
       (case current-category
-	((DOUBLE) (protoc:make-type-reference 
-		   "double" protobuf:field-type-double))
+	((DOUBLE) 
+	 (protoc:make-type-reference "double" protobuf:field-type-double))
 	((FLOAT) (protoc:make-type-reference "float" protobuf:field-type-float))
 	((INT32) (protoc:make-type-reference "int32" protobuf:field-type-int32))
 	((INT64) (protoc:make-type-reference "int64" protobuf:field-type-int64))
-	((UINT32) (protoc:make-type-reference
-		   "uint32" protobuf:field-type-uint32))
-	((UINT64) (protoc:make-type-reference
-		   "uint64" protobuf:field-type-uint64))	 
-	((SINT32) (protoc:make-type-reference
-		   "sint32" protobuf:field-type-sint32))
-	((SINT64) (protoc:make-type-reference
-		   "sint64" protobuf:field-type-sint64))
-	((FIXED32) (protoc:make-type-reference
-		    "fixed32" protobuf:field-type-fixed32))
-	((FIXED64) (protoc:make-type-reference 
-		    "fixed64" protobuf:field-type-fixed64))
-	((SFIXED32) (protoc:make-type-reference
-		     "sfixed32" protobuf:field-type-sfixed32))
-	((SFIXED64) (protoc:make-type-reference
-		     "sfixed64" protobuf:field-type-sfixed64))
+	((UINT32) 
+	 (protoc:make-type-reference "uint32" protobuf:field-type-uint32))
+	((UINT64) 
+	 (protoc:make-type-reference "uint64" protobuf:field-type-uint64))
+	((SINT32) 
+	 (protoc:make-type-reference "sint32" protobuf:field-type-sint32))
+	((SINT64) 
+	 (protoc:make-type-reference "sint64" protobuf:field-type-sint64))
+	((FIXED32) 
+	 (protoc:make-type-reference "fixed32" protobuf:field-type-fixed32))
+	((FIXED64) 
+	 (protoc:make-type-reference "fixed64" protobuf:field-type-fixed64))
+	((SFIXED32) 
+	 (protoc:make-type-reference "sfixed32" protobuf:field-type-sfixed32))
+	((SFIXED64) 
+	 (protoc:make-type-reference "sfixed64" protobuf:field-type-sfixed64))
 	((BOOL) (protoc:make-type-reference "bool" protobuf:field-type-bool))
-	((STRING) (protoc:make-type-reference 
-		   "string" protobuf:field-type-string))
+	((STRING) 
+	 (protoc:make-type-reference "string" protobuf:field-type-string))
 	((BYTES) (protoc:make-type-reference "bytes" protobuf:field-type-bytes))
 
 	((IDENTIFIER)
@@ -425,8 +433,8 @@
 	     (if (eq? current-category 'DOT)
 		 (begin (get-token) (loop (string-append name val ".")))
 		 (begin (unget-token current-token)
-			(protoc:make-type-reference 
-			 (string-append name val) #f))))))
+			(protoc:make-type-reference
+			 (string-append name val)))))))
 	(else (unexpected-token-error))))
 
     (define (parse-package)
@@ -504,6 +512,28 @@
 	(assert-next-category 'LBRACE)
 	(parse-enum-elements enum)))
 
+    (define (parse-field parent rule)
+      (define (parse-maybe-field-options) #f)
+      
+      (let ((type (parse-type)))
+	(assert-next-category 'IDENTIFIER)
+	(let ((field-name current-value))
+	  (assert-next-category 'EQUAL)
+	  (assert-next-category 'NUM-INTEGER)
+	  (let* ((index current-value)
+		 (options (parse-maybe-field-options))
+		 (fd (protoc:make-field-definition 
+		      parent rule type field-name index options)))
+	    
+	    (if (not (protoc:type-reference-descriptor type))
+		(set! unresolved-type-references
+		      (cons type unresolved-type-references)))
+	    
+	    (assert-next-category 'SEMICOLON)
+	    (protoc:set-type-reference-location! type fd)
+
+	    fd))))
+
     (define (parse-message parent)
       (define (parse-message-element message-def)
 	(define (parse-extension-ranges)
@@ -525,37 +555,15 @@
 		 (let* ((to (case current-category
 			      ((NUM-INTEGER) current-value)
 			      ((MAX) 536870911)
-			      (else (raise (make-assertion-violation)))))
+			      (else (unexpected-token-error))))
 			(ext (protoc:make-extension-range-definition from to)))
 		   (get-token)
 		   (case current-category
 		     ((COMMA) (parse-extension-range-element (cons ext exts)))
 		     ((SEMICOLON) (reverse (cons ext exts)))
-		     (else (raise (make-assertion-violation))))))
-		(else (raise (make-assertion-violation))))))
+		     (else (unexpected-token-error)))))
+		(else (unexpected-token-error)))))
 	  (parse-extension-range-element (list)))
-
-	(define (parse-field rule)
-	  (define (parse-maybe-field-options) #f)
-
-	  (let ((type (parse-type)))
-	    (assert-next-category 'IDENTIFIER)
-	    (let ((field-name current-value))
-	      (assert-next-category 'EQUAL)
-	      (assert-next-category 'NUM-INTEGER)
-	      (let* ((index current-value)
-		     (options (parse-maybe-field-options))
-		     (fd (protoc:make-field-definition 
-			  message-def rule type field-name index options)))
-
-		(if (not (protoc:type-reference-descriptor type))
-		    (set! unresolved-type-fields 
-			  (cons (cons (protoc:type-reference-name type) fd)
-				unresolved-type-fields)))
-
-		(assert-next-category 'SEMICOLON)
-
-		fd))))
 	
 	(get-token)
 	(case current-category
@@ -577,18 +585,18 @@
 	   (parse-message-element message-def))
 	  ((OPTIONAL)
 	   (protoc:set-message-definition-fields!
-	    message-def (cons (parse-field 'optional) 
+	    message-def (cons (parse-field message-def 'optional) 
 			      (protoc:message-definition-fields message-def)))	
 	   (parse-message-element message-def))
 	  ((RBRACE) message-def)
 	  ((REPEATED)
 	   (protoc:set-message-definition-fields!
-	    message-def (cons (parse-field 'repeated) 
+	    message-def (cons (parse-field message-def 'repeated) 
 			      (protoc:message-definition-fields message-def)))	
 	   (parse-message-element message-def))
 	  ((REQUIRED)
 	   (protoc:set-message-definition-fields!
-	    message-def (cons (parse-field 'required) 
+	    message-def (cons (parse-field message-def 'required) 
 			      (protoc:message-definition-fields message-def)))
 	   (parse-message-element message-def))
 	  (else (unexpected-token-error))))
@@ -621,7 +629,7 @@
 	  (else (unexpected-token-error))))
       
       (parse-proto-elements)
-      (for-each resolve-type unresolved-type-fields)
+      (for-each resolve-type unresolved-type-references)
       proto)
       
     (lambda () (parse-proto)))
