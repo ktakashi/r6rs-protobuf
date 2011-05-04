@@ -82,6 +82,10 @@
 			   (protoc:enum-definition? definition2))
 		      (and (enum-definition-equal? definition1 definition2)
 			   (loop (cdr definitions1) (cdr definitions2))))
+		     ((and (protoc:extension-definition? definition1)
+			   (protoc:extension-definition? definition2))
+		      (and (extension-definition-equal? definition1 definition2)
+			   (loop (cdr definitions1) (cdr definitions2))))
 		     (else #f)))))))
 
 (define (message-definition-equal? m1 m2)
@@ -134,6 +138,26 @@
        (eqv? (protoc:extension-range-definition-to e1)
 	     (protoc:extension-range-definition-to e2))))
 
+(define (type-reference-equal? t1 t2)
+  (and (protoc:type-reference? t1)
+       (protoc:type-reference? t2)
+       (equal? (protoc:type-reference-name t1)
+	       (protoc:type-reference-name t2))))
+
+(define (extension-definition-equal? e1 e2)
+  (and (protoc:extension-definition? e1)
+       (protoc:extension-definition? e2)
+       (type-reference-equal? (protoc:extension-definition-target e1)
+			      (protoc:extension-definition-target e2))
+       (let loop ((fields1 (protoc:extension-definition-fields e1))
+		  (fields2 (protoc:extension-definition-fields e2)))
+	 (if (null? fields1)
+	     (null? fields2)
+	     (let ((field1 (car fields1))
+		   (field2 (car fields2)))
+	       (and (field-definition-equal? field1 field2)
+		    (loop (cdr fields1) (cdr fields2))))))))
+
 (define (enum-value-definition-equal? v1 v2)
   (and (protoc:enum-value-definition? v1)
        (protoc:enum-value-definition? v2)
@@ -178,7 +202,7 @@
     (test-assert 
      (proto-definition-equal? (protoc:make-proto target-root-package) p))))
 
- (test-group "message"
+(test-group "message"
   (let* ((p ((protoc:make-parser 
 	      (mock-lexer 'MESSAGE '(IDENTIFIER . "Foo") 'LBRACE 'RBRACE))))
 	 (target-root-package (protoc:make-package #f #f))
@@ -197,6 +221,20 @@
     (protoc:set-package-definitions!
      target-root-package
      (cons q (protoc:package-definitions target-root-package)))
+    (test-assert
+     (proto-definition-equal? (protoc:make-proto target-root-package) p))))
+
+(test-group "extension"
+  (let* ((p ((protoc:make-parser
+	      (mock-lexer 'MESSAGE '(IDENTIFIER . "Foo") 'LBRACE 'EXTENSIONS
+			  '(NUM-INTEGER . 1) 'SEMICOLON 'RBRACE 'EXTEND
+			  '(IDENTIFIER . "Foo") 'LBRACE 'RBRACE))))
+	 (target-root-package (protoc:make-package #f #f))
+	 (q (protoc:make-message-definition "Foo" target-root-package))
+	 (rt (protoc:make-type-reference "Foo"))
+	 (r (protoc:make-extension-definition rt target-root-package)))
+    (protoc:set-type-reference-location! rt r)
+    (protoc:set-package-definitions! target-root-package (list r q))
     (test-assert
      (proto-definition-equal? (protoc:make-proto target-root-package) p))))
 
