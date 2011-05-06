@@ -51,6 +51,8 @@
 	  protobuf:field-descriptor-default
 	  protobuf:field-descriptor-name
 
+	  protobuf:make-extension-field-descriptor
+
 	  protobuf:make-field
 	  protobuf:field-field-descriptor
 	  protobuf:field-value
@@ -58,10 +60,18 @@
 	  protobuf:set-field-value!
 	  protobuf:clear-field!
 
+	  protobuf:register-extension
+
 	  protobuf:message-builder-build
 	  protobuf:message-builder-field
+	  protobuf:message-builder-clear-extension!
+	  protobuf:message-builder-extension
+	  protobuf:message-builder-has-extension?
+	  protobuf:message-builder-set-extension!
 	  
 	  protobuf:make-message
+	  protobuf:message-extension
+	  protobuf:message-has-extension?
 	  protobuf:message-write
 	  protobuf:message-read
 
@@ -226,6 +236,12 @@
 		       protobuf:field-descriptor?)
     (fields index name type repeated? required? default))
 
+  (define-record-type (protobuf:extension-field-descriptor
+		       protobuf:make-extension-field-descriptor
+		       protobuf:extension-field-descriptor?)
+    (parent protobuf:field-descriptor)
+    (opaque #t))
+
   (define-record-type (protobuf:field protobuf:make-field protobuf:field?)
     (fields
      (mutable value protobuf:field-value protobuf:set-field-value-internal!)
@@ -242,17 +258,73 @@
 	     (p (car value) descriptor #t))))))
 
   (define-record-type (protobuf:message protobuf:make-message protobuf:message?)
-    (fields fields))
+    (fields fields extension-fields))
   
   (define-record-type (protobuf:message-builder 
 		       protobuf:make-message-builder 
 		       protobuf:message-builder?)
-    (fields type fields)
-    (protocol (lambda (p) 
-		(lambda (type field-descriptors) 
-		  (p type (map (lambda (x) (protobuf:make-field x)) 
-			       field-descriptors))))))
-     
+    (fields type fields extension-fields)
+    (protocol 
+     (lambda (p)
+       (lambda (type field-descriptors) 
+	 (p type 
+	    (map protobuf:make-field field-descriptors) 
+	    (make-eqv-hashtable))))))
+
+  (define extension-registry (make-eq-hashtable))
+  
+  (define (protobuf:register-extension prototype fd)
+    (define type (protobuf:message-builder-type prototype))
+    (define (update exts) 
+      (hashtable-set! exts (protobuf:field-descriptor-index fd) fd) exts)
+    (hashtable-update! extension-registry type update (make-eqv-hashtable)))
+  
+  (define (assert-registered-extension type fd)
+    (or (memq fd (hashtable-ref extension-registry type '()))
+	(raise (condition (make-assertion-violation)
+			  (make-message-condition "Unknown extension.")))))
+
+  (define (protobuf:message-has-extension? m type fd)
+    (assert-registered-extension type fd)
+    (hashtable-contains? (protobuf:message-extension-fields m) 
+			 (protobuf:field-descriptor-index fd)))
+
+  (define (protobuf:message-extension m type fd)
+    (assert-registered-extension type fd)
+    (let ((field (hashtable-ref (protobuf:message-extension-fields m)
+				(protobuf:field-descriptor-index fd)
+				#f)))
+      (if field
+	  (protobuf:field-value field) 
+	  (protobuf:field-descriptor-default fd))))
+
+  (define (protobuf:message-builder-has-extension? b fd)
+    (assert-registered-extension (protobuf:message-builder-type b) fd)
+    (hashtable-contains? (protobuf:message-builder-extension-fields b)
+			 (protobuf:field-descriptor-index fd)))
+
+  (define (protobuf:message-builder-clear-extension! b fd)
+    (assert-registered-extension (protobuf:message-builder-type b) fd)
+    (hashtable-delete! (protobuf:message-builder-extension-fields b) 
+		       (protobuf:field-descriptor-index fd)))
+
+  (define (protobuf:message-builder-set-extension! b fd val)
+    (assert-registered-extension (protobuf:message-builder-type b) fd)
+    (let ((f (protobuf:make-field fd)))
+      (protobuf:set-field-value! f val)
+      (hashtable-set! (protobuf:message-builder-extension-fields b) 
+		      (protobuf:field-descriptor-index fd)
+		      f)))
+
+  (define (protobuf:message-builder-extension b fd)
+    (assert-registered-extension (protobuf:message-builder-type b) fd)
+    (let ((field (hashtable-ref (protobuf:message-builder-extension-fields b)
+				(protobuf:field-descriptor-index fd)
+				#f)))
+      (if field 
+	  (protobuf:field-value field) 
+	  (protobuf:field-descriptor-default fd))))
+
   (define (protobuf:message-builder-build b)
     (define (clone-field field)
       (if (protobuf:field-has-value? field)	     
@@ -268,6 +340,15 @@
 	      (protobuf:make-field 
 	       (protobuf:field-field-descriptor field) (vector))
 	      (protobuf:make-field (protobuf:field-field-descriptor field)))))
+
+    (define (clone-extensions extension-fields)
+      (let ((ht (make-eqv-hashtable)))
+	(vector-for-each 
+	 (lambda (k)
+	   (hashtable-set! 
+	    ht k (clone-field (hashtable-ref extension-fields k #f)))) 
+	 (hashtable-keys extension-fields))
+	ht))
       
     (define (ensure-required f)
       (let ((fd (protobuf:field-field-descriptor f)))
@@ -284,10 +365,13 @@
 	   (ctor (record-constructor
 		  (make-record-constructor-descriptor type #f #f)))
 	   (fields (protobuf:message-builder-fields b)))
+	    
       (for-each ensure-required fields)
-      (let ((cfs (map clone-field fields)))
-	(apply ctor (cons cfs (map protobuf:field-value cfs))))))
-  
+      (let ((cfs (map clone-field fields))
+	    (ecfs (clone-extensions 
+		   (protobuf:message-builder-extension-fields b))))
+	(apply ctor (cons cfs (cons ecfs (map protobuf:field-value cfs)))))))
+
   (define (protobuf:message-builder-field builder index)
     (find (lambda (x)
 	    (eqv? (protobuf:field-descriptor-index 
@@ -423,7 +507,12 @@
      protobuf:write-bytes read-bytes bytevector? (make-bytevector 0)))
 
   (define (protobuf:message-write obj port)    
+    (define extension-fields
+      (let ((efs (protobuf:message-extension-fields obj)))
+	(let-values (((keys values) (hashtable-entries efs))) values)))
+
     (define (write-field field)
+
       (define (wire-type->ordinal wire-type)
 	(case wire-type
 	  ((varint) 0)
@@ -452,11 +541,19 @@
 	      (vector-for-each write-field-inner (protobuf:field-value field))
 	      (write-field-inner (protobuf:field-value field)))))
 
-    (for-each write-field (protobuf:message-fields obj)))
-    
+    (for-each write-field (protobuf:message-fields obj))
+    (vector-for-each write-field extension-fields))
+
   (define (protobuf:message-read builder port)
     (define field-table (make-hashtable (lambda (idx) idx) eqv?))
-    
+    (define (lookup-field field-number)
+      (or (hashtable-ref field-table field-number #f)
+	  (hashtable-ref (hashtable-ref extension-registry 
+					(protobuf:message-builder-type builder) 
+					(make-eqv-hashtable))
+			 field-number 
+			 #f)))
+
     (define (read-fields)
       (define (read-field)
 	(define (ordinal->wire-type ordinal)
@@ -470,11 +567,11 @@
 	    (else (raise (make-assertion-violation)))))
 	(let* ((field-header (read-varint port))
 	       (wire-type (ordinal->wire-type (bitwise-and field-header 7)))
-	       (field-number (bitwise-arithmetic-shift-right field-header 3)))
+	       (field-number (bitwise-arithmetic-shift-right field-header 3))
+	       (field (lookup-field field-number)))
 	  
-	  (if (hashtable-contains? field-table field-number)
-	      (let* ((field (hashtable-ref field-table field-number #f))
-		     (field-descriptor (protobuf:field-field-descriptor field))
+	  (if field
+	      (let* ((field-descriptor (protobuf:field-field-descriptor field))
 		     (deserializer (protobuf:field-type-descriptor-deserializer
 				    (protobuf:field-descriptor-type 
 				     field-descriptor))))
