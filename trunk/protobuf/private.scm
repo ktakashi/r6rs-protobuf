@@ -547,15 +547,17 @@
     (vector-for-each write-field extension-fields))
 
   (define (protobuf:message-read builder port)
-    (define field-table (make-hashtable (lambda (idx) idx) eqv?))
+    (define field-table (make-eqv-hashtable))
     (define (lookup-field-metadata field-number)
       (let ((field (hashtable-ref field-table field-number #f)))
-	(or (and field (values field (protobuf:field-field-descriptor field)))
-	    (let ((extensions (hashtable-ref 
-			       extension-registry 
-			       (protobuf:message-builder-type builder)
-			       (make-eqv-hashtable))))
-	      (values #f (hashtable-ref extensions field-number #f))))))
+	(if field
+	    (values field (protobuf:field-field-descriptor field))
+	    (values #f (hashtable-ref (hashtable-ref 
+				       extension-registry
+				       (protobuf:message-builder-type builder)
+				       (make-eqv-hashtable)) 
+				      field-number 
+				      #f)))))
 
     (define (read-fields)
       (define (read-field)

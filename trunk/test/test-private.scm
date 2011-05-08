@@ -120,7 +120,8 @@
 	   (m (protobuf:make-message
 	       (list (protobuf:make-field
 		      (protobuf:make-field-descriptor 0 "test" ftd #t #f #f)
-		      (vector 1 2 3))))))
+		      (vector 1 2 3)))
+	       (make-eqv-hashtable))))
 
       (let-values (((bv-out bv-transcoder) (open-bytevector-output-port)))
 	(protobuf:message-write m bv-out)
