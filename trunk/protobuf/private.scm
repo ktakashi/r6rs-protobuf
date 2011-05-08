@@ -64,10 +64,10 @@
 
 	  protobuf:message-builder-build
 	  protobuf:message-builder-field
-	  protobuf:message-builder-clear-extension!
+	  protobuf:clear-message-builder-extension!
 	  protobuf:message-builder-extension
 	  protobuf:message-builder-has-extension?
-	  protobuf:message-builder-set-extension!
+	  protobuf:set-message-builder-extension!
 	  
 	  protobuf:make-message
 	  protobuf:message-extension
@@ -280,7 +280,9 @@
     (hashtable-update! extension-registry type update (make-eqv-hashtable)))
   
   (define (assert-registered-extension type fd)
-    (or (memq fd (hashtable-ref extension-registry type '()))
+    (or (hashtable-contains? 
+	 (hashtable-ref extension-registry type (make-eqv-hashtable)) 
+	 (protobuf:field-descriptor-index fd))
 	(raise (condition (make-assertion-violation)
 			  (make-message-condition "Unknown extension.")))))
 
@@ -303,12 +305,12 @@
     (hashtable-contains? (protobuf:message-builder-extension-fields b)
 			 (protobuf:field-descriptor-index fd)))
 
-  (define (protobuf:message-builder-clear-extension! b fd)
+  (define (protobuf:clear-message-builder-extension! b fd)
     (assert-registered-extension (protobuf:message-builder-type b) fd)
     (hashtable-delete! (protobuf:message-builder-extension-fields b) 
 		       (protobuf:field-descriptor-index fd)))
 
-  (define (protobuf:message-builder-set-extension! b fd val)
+  (define (protobuf:set-message-builder-extension! b fd val)
     (assert-registered-extension (protobuf:message-builder-type b) fd)
     (let ((f (protobuf:make-field fd)))
       (protobuf:set-field-value! f val)
@@ -546,13 +548,14 @@
 
   (define (protobuf:message-read builder port)
     (define field-table (make-hashtable (lambda (idx) idx) eqv?))
-    (define (lookup-field field-number)
-      (or (hashtable-ref field-table field-number #f)
-	  (hashtable-ref (hashtable-ref extension-registry 
-					(protobuf:message-builder-type builder) 
-					(make-eqv-hashtable))
-			 field-number 
-			 #f)))
+    (define (lookup-field-metadata field-number)
+      (let ((field (hashtable-ref field-table field-number #f)))
+	(or (and field (values field (protobuf:field-field-descriptor field)))
+	    (let ((extensions (hashtable-ref 
+			       extension-registry 
+			       (protobuf:message-builder-type builder)
+			       (make-eqv-hashtable))))
+	      (values #f (hashtable-ref extensions field-number #f))))))
 
     (define (read-fields)
       (define (read-field)
@@ -567,20 +570,29 @@
 	    (else (raise (make-assertion-violation)))))
 	(let* ((field-header (read-varint port))
 	       (wire-type (ordinal->wire-type (bitwise-and field-header 7)))
-	       (field-number (bitwise-arithmetic-shift-right field-header 3))
-	       (field (lookup-field field-number)))
+	       (field-number (bitwise-arithmetic-shift-right field-header 3)))
+	  (let-values (((field field-descriptor) 
+			(lookup-field-metadata field-number)))
 	  
-	  (if field
-	      (let* ((field-descriptor (protobuf:field-field-descriptor field))
-		     (deserializer (protobuf:field-type-descriptor-deserializer
-				    (protobuf:field-descriptor-type 
-				     field-descriptor))))
+	    (if field-descriptor
+		(let ((deserializer (protobuf:field-type-descriptor-deserializer
+				     (protobuf:field-descriptor-type 
+				      field-descriptor))))
 
-		(if (protobuf:field-descriptor-repeated? field-descriptor)
-		    (protobuf:set-field-value! 
-		     field (append (protobuf:field-value field) 
-				   (list (deserializer port))))
-		    (protobuf:set-field-value! field (deserializer port))))
+		  (if (protobuf:field-descriptor-repeated? field-descriptor)
+		      (if field
+			  (protobuf:set-field-value!
+			   field (append (protobuf:field-value field) 
+					 (list (deserializer port))))
+			  (protobuf:set-message-builder-extension! 
+			   builder field-descriptor 
+			   (append (protobuf:message-builder-extension 
+				    builder field-descriptor)
+				   (list (deserializer port)))))
+		      (if field
+			  (protobuf:set-field-value! field (deserializer port))
+			  (protobuf:set-message-builder-extension!
+			   builder field-descriptor (deserializer port)))))
 
 	      ;; If we don't have metadata about the field, consume its content
 	      ;; based on its wire type and then discard it.
@@ -591,7 +603,7 @@
 		((length-delimited) (read-string port))
 		((start-group) (read-string port))
 		((end-group) #f)
-		((fixed32) (read-fixed32 port))))))
+		((fixed32) (read-fixed32 port)))))))
 
       (if (port-eof? port)
 	  (protobuf:message-builder-build builder)

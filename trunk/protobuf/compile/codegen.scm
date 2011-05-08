@@ -24,12 +24,18 @@
 	  
 	  protoc:generate-package
 	  protoc:generate-message
+	  protoc:generate-extension
 	  protoc:generate-builder)
   (import (rnrs)
 	  (protobuf compile parse)
 	  (protobuf private)
 	  (srfi :13)
 	  (srfi :14))
+
+  (define-record-type (protoc:extension-naming-context
+		       protoc:make-extension-naming-context
+		       protoc:extension-naming-context?)
+    (fields extension-name))
 
   (define-record-type (protoc:enum-naming-context
 		       protoc:make-enum-naming-context
@@ -40,8 +46,14 @@
 		       protoc:make-message-naming-context
 		       protoc:message-naming-context?)
     (fields type-name
-	    predicate-name 
+	    predicate-name
+
 	    field-accessor-name 
+	    field-has-name
+
+	    extension-accessor-name
+	    extension-has-name
+	    
 	    writer-name 
 	    reader-name))
 
@@ -56,6 +68,12 @@
 	    field-mutator-name
 	    field-clear-name
 	    field-has-name
+
+	    extension-accessor-name
+	    extension-mutator-name
+	    extension-clear-name
+	    extension-has-name
+
 	    build-name))
   
   (define-record-type (protoc:naming-context
@@ -64,7 +82,8 @@
     (fields library-name
 	    enum-naming-context
 	    message-naming-context
-	    builder-naming-context))
+	    builder-naming-context
+	    extension-naming-context))
 
   (define default-package-name "protobuf.default")
 
@@ -115,10 +134,23 @@
      (lambda (message) 
        (string->symbol 
 	(string-append (type-name-recursive message) "?")))
+
      (lambda (message field) 
        (string->symbol
 	(string-append (type-name-recursive message) "-"
 		       (protoc:field-definition-name field))))
+     (lambda (message field)
+       (string->symbol
+	(string-append "has-" (type-name-recursive message) "-"
+		       (protoc:field-definition-name field) "?")))
+
+     (lambda (message)
+       (string->symbol
+	(string-append (type-name-recursive message) "-extension")))
+     (lambda (message)
+       (string->symbol
+	(string-append "has-" (type-name-recursive message) "-extension?")))
+
      (lambda (message)
        (string->symbol (string-append (type-name-recursive message) "-write")))
      (lambda (message)
@@ -150,15 +182,43 @@
        (string->symbol 
 	(string-append "has-" (default-message-builder-name message) "-"
 		       (protoc:field-definition-name field) "?")))
+
+     (lambda (message)
+       (string->symbol
+	(string-append (default-message-builder-name message) "-extension")))
+     (lambda (message)
+       (string->symbol 
+	(string-append "set-" (default-message-builder-name message) "-"
+		       "extension!")))
+     (lambda (message)
+       (string->symbol 
+	(string-append "clear-" (default-message-builder-name message) "-"
+		       "extension!")))
+     (lambda (message)
+       (string->symbol 
+	(string-append "has-" (default-message-builder-name message) "-"
+		       "extension?")))
+
      (lambda (message)
        (string->symbol
 	(string-append (default-message-builder-name message) "-build")))))
+  
+  (define protoc:default-extension-naming-context
+    (protoc:make-extension-naming-context
+     (lambda (extension field)
+       (string->symbol
+	(string-append (type-name-recursive
+			(protobuf:message-field-type-descriptor-definition
+			 (protoc:type-reference-descriptor
+			  (protoc:extension-definition-target extension))))
+		       "-" (protoc:field-definition-name field))))))
   
   (define protoc:default-naming-context
     (protoc:make-naming-context protoc:default-package-name-transformer 
 				protoc:default-enum-naming-context
 				protoc:default-message-naming-context 
-				protoc:default-builder-naming-context))
+				protoc:default-builder-naming-context
+				protoc:default-extension-naming-context))
 
   (define default-imports
     '((rnrs base) (rnrs enums) (rnrs records syntactic) (protobuf private)))
@@ -170,6 +230,8 @@
       (protoc:naming-context-message-naming-context naming-context))
     (define builder-naming-context 
       (protoc:naming-context-builder-naming-context naming-context))
+    (define extension-naming-context
+      (protoc:naming-context-extension-naming-context naming-context))
 
     (define (generate-definition definition)
       (cond ((protoc:message-definition? definition)
@@ -181,6 +243,8 @@
 			  (protoc:message-definition-definitions definition)))))
 	    ((protoc:enum-definition? definition)
 	     (protoc:generate-enum definition enum-naming-context))
+	    ((protoc:extension-definition? definition)
+	     (protoc:generate-extension definition naming-context))
 	    (else '())))
 
     `(library ,((protoc:naming-context-library-name naming-context) 
@@ -212,8 +276,13 @@
 		  ((protoc:message-naming-context-writer-name
 		    message-naming-context) message)
 		  ((protoc:message-naming-context-reader-name
+		    message-naming-context) message)
+
+		  ((protoc:message-naming-context-extension-accessor-name
+		    message-naming-context) message)
+		  ((protoc:message-naming-context-extension-has-name
 		    message-naming-context) message))
-	    (let ((accessor-name 
+	    (let ((accessor-name
 		   (protoc:message-naming-context-field-accessor-name 
 		    message-naming-context)))
 	      (map (lambda (field) (accessor-name message field))
@@ -235,7 +304,17 @@
 		  ((protoc:builder-naming-context-predicate-name
 		    builder-naming-context) message)
 		  ((protoc:builder-naming-context-build-name
+		    builder-naming-context) message)
+
+		  ((protoc:builder-naming-context-extension-accessor-name
+		    builder-naming-context) message)
+		  ((protoc:builder-naming-context-extension-mutator-name
+		    builder-naming-context) message)
+		  ((protoc:builder-naming-context-extension-has-name
+		    builder-naming-context) message)
+		  ((protoc:builder-naming-context-extension-clear-name
 		    builder-naming-context) message))
+
 	    (let loop ((fields (protoc:message-definition-fields message))
 		       (bindings (list)))
 	      (if (null? fields)
@@ -253,6 +332,14 @@
 					    (field-clear-name message field))
 				      bindings))))))))
 
+  (define (protoc:extension-exports extension extension-naming-context)
+    (define extension-name
+      (protoc:extension-naming-context-extension-name 
+       extension-naming-context))
+
+    (map (lambda (field) (extension-name extension field)) 
+	 (protoc:extension-definition-fields extension)))
+
   (define (protoc:package-exports package naming-context)
     (define enum-naming-context
       (protoc:naming-context-enum-naming-context naming-context))
@@ -260,6 +347,8 @@
       (protoc:naming-context-message-naming-context naming-context))
     (define builder-naming-context
       (protoc:naming-context-builder-naming-context naming-context))
+    (define extension-naming-context
+      (protoc:naming-context-extension-naming-context naming-context))
 
     (define (generate-export definition)
       (cond ((protoc:message-definition? definition)
@@ -271,6 +360,8 @@
 			  (protoc:message-definition-definitions definition)))))
 	    ((protoc:enum-definition? definition)
 	     (protoc:enum-exports definition enum-naming-context))
+	    ((protoc:extension-definition? definition)
+	     (protoc:extension-exports definition extension-naming-context))
 	    (else '())))
 
     (let loop ((definitions (protoc:package-definitions package))
@@ -307,12 +398,17 @@
     (define field-accessor-name
       (protoc:message-naming-context-field-accessor-name 
        message-naming-context))
+    (define extension-accessor-name
+      (protoc:message-naming-context-extension-accessor-name 
+       message-naming-context))
+    (define extension-has-name
+      (protoc:message-naming-context-extension-has-name message-naming-context))
     (define message-writer-name
       (protoc:message-naming-context-writer-name message-naming-context))
     (define message-reader-name
       (protoc:message-naming-context-reader-name message-naming-context))
 
-    (let-values (((w0 w1 r0) (gensym-values 'w0 'w1 'r0)))
+    (let-values (((e0 e1 w0 w1 r0) (gensym-values 'e0 'e1 'w0 'w1 'r0)))
       `((define-record-type ,(message-type-name message)
 	  (fields ,@(let ((fields (protoc:message-definition-fields message)))
 		      (if fields
@@ -326,99 +422,53 @@
 	  (opaque #t)
 	  (parent protobuf:message)
 	  (sealed #t))
+	(define (,(extension-accessor-name message) ,e0 ,e1)
+	  (protobuf:message-extension ,e0 ,(message-type-name message) ,e1))
+	(define (,(extension-has-name message) ,e0 ,e1)
+	  (protobuf:message-has-extension? 
+	   ,e0 ,(message-type-name message) ,e1))
 	(define (,(message-writer-name message) ,w0 ,w1)
 	  (protobuf:message-write ,w0 ,w1))
 	(define (,(message-reader-name message) ,r0)
 	  (protobuf:message-read (,(builder-constructor-name message)) ,r0)))))
 
-  (define (protoc:generate-builder message naming-context)
+  (define (calc-field-default field)
+    (if (eq? (protoc:field-definition-rule field) 'repeated)
+	(quote '())
+	(protobuf:field-type-descriptor-default
+	 (protoc:type-reference-descriptor
+	  (protoc:field-definition-type field)))))
+
+  (define (type-reference->type-descriptor-expr type-ref naming-context)
+    (define builder-naming-context 
+      (protoc:naming-context-builder-naming-context naming-context))
     (define enum-naming-context
       (protoc:naming-context-enum-naming-context naming-context))
     (define message-naming-context 
       (protoc:naming-context-message-naming-context naming-context))
-    (define builder-naming-context 
-      (protoc:naming-context-builder-naming-context naming-context))
 
-    (define message-type-name
-      (protoc:message-naming-context-type-name message-naming-context))
+    (define builder-constructor-name
+      (protoc:builder-naming-context-constructor-name builder-naming-context))
+    (define enum-predicate-name
+      (protoc:enum-naming-context-predicate-name enum-naming-context))
     (define message-predicate-name
       (protoc:message-naming-context-predicate-name message-naming-context))
 
-    (define enum-predicate-name
-      (protoc:enum-naming-context-predicate-name enum-naming-context))
+    (define p0 (gensym-values 'p0))
 
-    (define builder-type-name
-      (protoc:builder-naming-context-type-name builder-naming-context))
-    (define builder-constructor-name
-      (protoc:builder-naming-context-constructor-name builder-naming-context))
-    (define builder-predicate-name
-      (protoc:builder-naming-context-predicate-name builder-naming-context))
-    (define builder-build-name
-      (protoc:builder-naming-context-build-name builder-naming-context))
-
-    (define field-accessor-name
-      (protoc:builder-naming-context-field-accessor-name 
-       builder-naming-context))
-    (define field-mutator-name
-      (protoc:builder-naming-context-field-mutator-name builder-naming-context))
-    (define field-has-name
-      (protoc:builder-naming-context-field-has-name builder-naming-context))
-    (define field-clear-name
-      (protoc:builder-naming-context-field-clear-name builder-naming-context))
-    
-    (define field-internal-mutators
-      (make-hashtable (lambda (f) (protoc:field-definition-ordinal f))
-		      (lambda (f1 f2)
-			(eqv? (protoc:field-definition-ordinal f1)
-			      (protoc:field-definition-ordinal f2)))))
-
-    (define (generate-field-clear message field)
-      (let-values (((b0) (gensym-values 'b0)))
-	`(define (,(field-clear-name message field) ,b0)
-	   (protobuf:clear-field! 
-	    (protobuf:message-builder-field
-	     ,b0 ,(protoc:field-definition-ordinal field)))
-	   (,(hashtable-ref field-internal-mutators field #f) ,b0 
-	    ,(calc-field-default field)))))
-
-    (define (generate-field-has-predicate message field)
-      (let-values (((b0) (gensym-values 'b0)))
-	`(define (,(field-has-name message field) ,b0)
-	   (protobuf:field-has-value?
-	    (protobuf:message-builder-field 
-	     ,b0 ,(protoc:field-definition-ordinal field))))))
-
-    (define (generate-field-mutator message field)
-      (let-values (((b0 b1) (gensym-values 'b0 'b1)))
-	`(define (,(field-mutator-name message field) ,b0 ,b1)
-	   (protobuf:set-field-value!
-	    (protobuf:message-builder-field
-	     ,b0 ,(protoc:field-definition-ordinal field)) ,b1)
-	   (,(hashtable-ref field-internal-mutators field #f) ,b0 ,b1))))
-    
-    (define (calc-field-default field)
-      (if (eq? (protoc:field-definition-rule field) 'repeated)
-	  (quote '())
-	  (protobuf:field-type-descriptor-default
-	   (protoc:type-reference-descriptor 
-	    (protoc:field-definition-type field)))))
-
-    (define (type-reference->type-descriptor-expr type-ref)
-      (define p0 (gensym-values 'p0))
-      (define (message-field-type-descriptor-expr descriptor)
-	`(protobuf:make-message-field-type-descriptor
-	  ,(protobuf:field-type-descriptor-name descriptor)
-	  ,(list 'quote (protobuf:field-type-descriptor-wire-type descriptor))
-	  protobuf:write-message
-	  (lambda (,p0)
-	    (protobuf:message-read 
-	     (,(builder-constructor-name 
-		(protobuf:message-field-type-descriptor-definition 
-		 descriptor))) 
-	     ,p0))
-	  ,(message-predicate-name 
-	    (protobuf:message-field-type-descriptor-definition descriptor))
-	  ,(protobuf:field-type-descriptor-default descriptor)))
+    (define (message-field-type-descriptor-expr descriptor)
+      `(protobuf:make-message-field-type-descriptor
+	,(protobuf:field-type-descriptor-name descriptor)
+	,(list 'quote (protobuf:field-type-descriptor-wire-type descriptor))
+	protobuf:write-message
+	(lambda (,p0)
+	  (protobuf:message-read 
+	   (,(builder-constructor-name 
+	      (protobuf:message-field-type-descriptor-definition descriptor)))
+	   ,p0))
+	,(message-predicate-name 
+	  (protobuf:message-field-type-descriptor-definition descriptor))
+	,(protobuf:field-type-descriptor-default descriptor)))
 
       (define (enum-field-type-descriptor-expr descriptor)
 	`(protobuf:make-enum-field-type-descriptor
@@ -471,6 +521,118 @@
 	   (enum-field-type-descriptor-expr descriptor))
 	  (else (raise (make-assertion-violation))))))
 
+  (define (protoc:generate-extension extension naming-context)
+    (define builder-naming-context
+      (protoc:naming-context-builder-naming-context naming-context))
+    (define extension-naming-context
+      (protoc:naming-context-extension-naming-context naming-context))
+
+    (define builder-constructor-name
+      (protoc:builder-naming-context-constructor-name builder-naming-context))
+    (define extension-name
+      (protoc:extension-naming-context-extension-name extension-naming-context))
+
+    (define (define-extension extension-field)
+      `(define ,(extension-name extension extension-field)
+	 (protobuf:make-extension-field-descriptor
+	  ,(protoc:field-definition-ordinal extension-field)
+	  ,(protoc:field-definition-name extension-field)
+	  ,(type-reference->type-descriptor-expr
+	    (protoc:field-definition-type extension-field) naming-context)
+	  ,(eq? (protoc:field-definition-rule extension-field) 'repeated)
+	  ,(eq? (protoc:field-definition-rule extension-field) 'required)
+	  ,(calc-field-default extension-field))))
+
+    (define (make-extension-registrar prototype-binding)
+      (lambda (extension-field)
+	`(protobuf:register-extension
+	  ,prototype-binding ,(extension-name extension extension-field))))
+
+    (let ((fields (protoc:extension-definition-fields extension)))
+      (append 
+       (if (null? fields)
+	   '()
+	   (let-values (((e0) (gensym-values 'e0)))
+	     `((let ((,e0 (,(builder-constructor-name
+			     (protobuf:message-field-type-descriptor-definition
+			      (protoc:type-reference-descriptor
+			       (protoc:extension-definition-target 
+				extension)))))))
+		 ,@(map (make-extension-registrar e0) fields)))))
+       (map define-extension fields))))
+
+  (define (protoc:generate-builder message naming-context)
+    (define message-naming-context 
+      (protoc:naming-context-message-naming-context naming-context))
+    (define builder-naming-context 
+      (protoc:naming-context-builder-naming-context naming-context))
+
+    (define message-type-name
+      (protoc:message-naming-context-type-name message-naming-context))
+    (define message-predicate-name
+      (protoc:message-naming-context-predicate-name message-naming-context))
+
+    (define builder-type-name
+      (protoc:builder-naming-context-type-name builder-naming-context))
+    (define builder-constructor-name
+      (protoc:builder-naming-context-constructor-name builder-naming-context))
+    (define builder-predicate-name
+      (protoc:builder-naming-context-predicate-name builder-naming-context))
+    (define builder-build-name
+      (protoc:builder-naming-context-build-name builder-naming-context))
+
+    (define field-accessor-name
+      (protoc:builder-naming-context-field-accessor-name 
+       builder-naming-context))
+    (define field-mutator-name
+      (protoc:builder-naming-context-field-mutator-name builder-naming-context))
+    (define field-has-name
+      (protoc:builder-naming-context-field-has-name builder-naming-context))
+    (define field-clear-name
+      (protoc:builder-naming-context-field-clear-name builder-naming-context))
+    
+    (define extension-accessor-name
+      (protoc:builder-naming-context-extension-accessor-name 
+       builder-naming-context))
+    (define extension-mutator-name
+      (protoc:builder-naming-context-extension-mutator-name
+       builder-naming-context))
+    (define extension-has-name
+      (protoc:builder-naming-context-extension-has-name builder-naming-context))
+    (define extension-clear-name
+      (protoc:builder-naming-context-extension-clear-name
+       builder-naming-context))
+
+    (define field-internal-mutators
+      (make-hashtable (lambda (f) (protoc:field-definition-ordinal f))
+		      (lambda (f1 f2)
+			(eqv? (protoc:field-definition-ordinal f1)
+			      (protoc:field-definition-ordinal f2)))))
+
+    (define (generate-field-clear message field)
+      (let-values (((b0) (gensym-values 'b0)))
+	`(define (,(field-clear-name message field) ,b0)
+	   (protobuf:clear-field! 
+	    (protobuf:message-builder-field
+	     ,b0 ,(protoc:field-definition-ordinal field)))
+	   (,(hashtable-ref field-internal-mutators field #f) ,b0 
+	    ,(calc-field-default field)))))
+
+    (define (generate-field-has-predicate message field)
+      (let-values (((b0) (gensym-values 'b0)))
+	`(define (,(field-has-name message field) ,b0)
+	   (protobuf:field-has-value?
+	    (protobuf:message-builder-field 
+	     ,b0 ,(protoc:field-definition-ordinal field))))))
+
+    (define (generate-field-mutator message field)
+      (let-values (((b0 b1) (gensym-values 'b0 'b1)))
+	`(define (,(field-mutator-name message field) ,b0 ,b1)
+	   (protobuf:set-field-value!
+	    (protobuf:message-builder-field
+	     ,b0 ,(protoc:field-definition-ordinal field)) ,b1)
+	   (,(hashtable-ref field-internal-mutators field #f) ,b0 ,b1))))
+    
     (let-values (((b0 b1 b2 b3) (gensym-values 'b0 'b1 'b2 'b3)))
       (let ((fields (protoc:message-definition-fields message)))
 	`((define-record-type (,(builder-type-name message)
@@ -496,7 +658,8 @@
 				    ,(protoc:field-definition-ordinal field)
 				    ,(protoc:field-definition-name field)
 				    ,(type-reference->type-descriptor-expr
-				      (protoc:field-definition-type field))
+				      (protoc:field-definition-type field)
+				      naming-context)
 				    ,(eq? (protoc:field-definition-rule field)
 					  'repeated)
 				    ,(eq? (protoc:field-definition-rule field)
@@ -525,6 +688,15 @@
 				     (generate-field-has-predicate message f)
 				     (generate-field-clear message f))
 			       bindings))))))
+	  
+	  (define (,(extension-accessor-name message) ,b0 ,b1)
+	    (protobuf:message-builder-extension ,b0 ,b1))
+	  (define (,(extension-mutator-name message) ,b0 ,b1 ,b2)
+	    (protobuf:set-message-builder-extension! ,b0 ,b1 ,b2))
+	  (define (,(extension-has-name message) ,b0 ,b1)
+	    (protobuf:message-builder-has-extension? ,b0 ,b1))
+	  (define (,(extension-clear-name message) ,b0 ,b1)
+	    (protobuf:clear-message-builder-extension! ,b0 ,b1))
 	  
 	  (define (,(builder-build-name message) ,b0)
 	    (protobuf:message-builder-build ,b0))))))
