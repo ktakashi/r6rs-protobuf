@@ -20,6 +20,7 @@
 (import (srfi :64))
 (import (protobuf compile parse))
 (import (protobuf compile tokenize))
+(import (protobuf private))
 
 (define (mock-lexer . token-list)
   (define tokens token-list)
@@ -35,7 +36,7 @@
 (define (option-declaration-equal? o1 o2)
   (and (protoc:option-declaration? o1)
        (protoc:option-declaration? o2)
-       (equal? (protoc:option-declaration-name o1)
+       (eq? (protoc:option-declaration-name o1)
 	       (protoc:option-declaration-name o2))
        (equal? (protoc:option-declaration-value o1)
 	       (protoc:option-declaration-value o2))))
@@ -110,13 +111,23 @@
 	       (and (field-definition-equal? field1 field2)
 		    (loop (cdr fields1) (cdr fields2))))))))
 
+(define (type-reference-equal? f1 f2)
+  (and (protoc:type-reference? f1)
+       (protoc:type-reference? f2)
+       (equal? (protoc:type-reference-name f1)
+	       (protoc:type-reference-name f2))
+       (eq? (protoc:type-reference-descriptor f1)
+	    (protoc:type-reference-descriptor f2))
+       (eq? (protoc:type-reference-location f1)
+	    (protoc:type-reference-location f2))))
+
 (define (field-definition-equal? f1 f2)
   (and (protoc:field-definition? f1)
        (protoc:field-definition? f2)
        (eq? (protoc:field-definition-rule f1)
 	    (protoc:field-definition-rule f2))
-       (eq? (protoc:field-definition-type f1)
-	    (protoc:field-definition-type f2))
+       (type-reference-equal? (protoc:field-definition-type f1)
+			      (protoc:field-definition-type f2))
        (equal? (protoc:field-definition-name f1)
 	       (protoc:field-definition-name f2))
        (eqv? (protoc:field-definition-ordinal f1)
@@ -250,6 +261,39 @@
 
 (test-end "enum")
 (test-begin "message")
+
+(test-begin "field")
+(test-group "options"
+  (let* ((p ((protoc:make-parser
+	      (mock-lexer 'MESSAGE
+			  '(IDENTIFIER . "Foo")
+			  'LBRACE
+			  'REQUIRED
+			  'STRING
+			  '(IDENTIFIER . "foo")
+			  'EQUAL
+			  '(NUM-INTEGER . 1)
+			  'LBRACK
+			  '(IDENTIFIER . "bar_option")
+			  'EQUAL
+			  '(STRING-LITERAL . "bar_value")
+			  'RBRACK
+			  'SEMICOLON
+			  'RBRACE))))
+	 (target-root-package (protoc:make-package #f #f))
+	 (q (protoc:make-message-definition "Foo" target-root-package)))
+    (protoc:set-message-definition-fields!
+     q (list (protoc:make-field-definition 
+	      q 'required (protoc:make-type-reference 
+			   "string" protobuf:field-type-string)
+	      "foo" 1 (list (protoc:make-option-declaration 
+			     'bar_option "bar_value")))))
+    (protoc:set-package-definitions!
+     target-root-package 
+     (cons q (protoc:package-definitions target-root-package)))
+    (test-assert
+     (proto-definition-equal? (protoc:make-proto target-root-package) p))))  
+(test-end "field")
 
 (test-group "extension-ranges"
   (let* ((p ((protoc:make-parser
