@@ -49,6 +49,7 @@
 	  protoc:message-definition-options
 	  protoc:message-definition-parent
 	  protoc:set-message-definition-extension-ranges!
+	  protoc:set-message-definition-fields!
 
 	  protoc:make-extension-range-definition
 	  protoc:extension-range-definition?
@@ -590,7 +591,42 @@
 	(parse-enum-elements enum)))
 
     (define (parse-field parent rule)
-      (define (parse-maybe-field-options) #f)
+      (define (parse-maybe-field-options)
+	(define (parse-field-options-inner options)
+	  (define (parse-field-option)
+	    (let ((name current-value))
+	      (assert-next-category 'EQUAL)
+	      (get-token)
+	      (let ((value 
+		     (cond ((memq current-category 
+				  '(IDENTIFIER 
+				    NUM-FLOAT 
+				    NUM-INTEGER 
+				    STRING-LITERAL))
+			    current-value)
+			   ((eq? current-category 'TRUE) #t)
+			   ((eq? current-category 'FALSE) #f)
+			   (else (unexpected-token-error)))))
+		(get-token)
+		(cond ((eq? current-category 'COMMA)
+		       (assert-next-category 'IDENTIFIER)
+		       (unget-token current-token))
+		      ((eq? current-category 'RBRACK) 
+		       (unget-token current-token))
+		      (else (unexpected-token-error)))
+		(protoc:make-option-declaration (string->symbol name) value))))
+	  
+	  (get-token)
+	  (cond ((eq? current-category 'RBRACK) (reverse options))
+		((eq? current-category 'IDENTIFIER)
+		 (parse-field-options-inner 
+		  (cons (parse-field-option) options)))
+		(else (unexpected-token-error))))
+
+	(get-token)
+	(if (eq? current-category 'LBRACK)
+	    (parse-field-options-inner '())
+	    #f))
       
       (let ((type (parse-type)))
 	(assert-next-category 'IDENTIFIER)
