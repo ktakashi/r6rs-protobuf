@@ -186,7 +186,7 @@
      (lambda (p) 
        (lambda (name package . parent)
 	 (p name (and (not (null? parent)) (car parent)) 
-	    package  '() '() '() '())))))
+	    package '() '() '() '())))))
 
   (define-record-type (protoc:type-reference
 		       protoc:make-type-reference
@@ -626,7 +626,7 @@
 	(get-token)
 	(if (eq? current-category 'LBRACK)
 	    (parse-field-options-inner '())
-	    #f))
+	    (begin (unget-token current-token) #f)))
       
       (let ((type (parse-type)))
 	(assert-next-category 'IDENTIFIER)
