@@ -20,6 +20,7 @@
   (export protobuf:make-field-type-descriptor
 	  protobuf:field-type-descriptor-default
 	  protobuf:field-type-descriptor-name
+	  protobuf:field-type-descriptor-predicate
 	  protobuf:field-type-descriptor-wire-type
 
 	  protobuf:make-message-field-type-descriptor
@@ -71,11 +72,14 @@
 	  
 	  protobuf:make-message
 	  protobuf:message-extension
+	  protobuf:message-field
 	  protobuf:message-has-extension?
 	  protobuf:message-write
 	  protobuf:message-read
 
+	  protobuf:read-varint
 	  protobuf:write-varint
+
 	  protobuf:write-double
 	  protobuf:write-float
 	  protobuf:write-int32
@@ -122,6 +126,8 @@
 	    (read-varint-inner port tally (+ septets 1))
 	    tally)))
     (read-varint-inner port 0 0))
+
+  (define protobuf:read-varint read-varint)
 
   (define (protobuf:write-double port double)
     (let ((vec (make-bytevector 8)))
@@ -234,7 +240,7 @@
   (define-record-type (protobuf:field-descriptor
 		       protobuf:make-field-descriptor
 		       protobuf:field-descriptor?)
-    (fields index name type repeated? required? default))
+    (fields index name type repeated? required? default)) 
 
   (define-record-type (protobuf:extension-field-descriptor
 		       protobuf:make-extension-field-descriptor
@@ -253,8 +259,7 @@
      (lambda (p)
        (lambda (descriptor . value)
 	 (if (null? value)
-	     (p (protobuf:field-descriptor-default descriptor) 
-		descriptor (protobuf:field-descriptor-repeated? descriptor))
+	     (p (protobuf:field-descriptor-default descriptor) descriptor #f)
 	     (p (car value) descriptor #t))))))
 
   (define-record-type (protobuf:message protobuf:make-message protobuf:message?)
@@ -270,6 +275,13 @@
 	 (p type 
 	    (map protobuf:make-field field-descriptors) 
 	    (make-eqv-hashtable))))))
+
+  (define (protobuf:message-field message index)
+    (find (lambda (x)
+	    (eqv? (protobuf:field-descriptor-index 
+		   (protobuf:field-field-descriptor x)) 
+		  index))
+	  (protobuf:message-fields message)))
 
   (define extension-registry (make-eq-hashtable))
   

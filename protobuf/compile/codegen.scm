@@ -267,10 +267,16 @@
   
   (define (protoc:enum-exports enum enum-naming-context)
     (list ((protoc:enum-naming-context-type-name enum-naming-context) enum)
+	  ((protoc:enum-naming-context-predicate-name enum-naming-context) enum)
 	  ((protoc:enum-naming-context-constructor-name enum-naming-context)
 	   enum)))
   
   (define (protoc:message-exports message message-naming-context)
+    (define accessor-name (protoc:message-naming-context-field-accessor-name 
+			   message-naming-context))
+    (define has-name (protoc:message-naming-context-field-has-name 
+		      message-naming-context))
+
     (append (list ((protoc:message-naming-context-predicate-name 
 		    message-naming-context) message)
 		  ((protoc:message-naming-context-writer-name
@@ -282,11 +288,18 @@
 		    message-naming-context) message)
 		  ((protoc:message-naming-context-extension-has-name
 		    message-naming-context) message))
-	    (let ((accessor-name
-		   (protoc:message-naming-context-field-accessor-name 
-		    message-naming-context)))
-	      (map (lambda (field) (accessor-name message field))
-		   (protoc:message-definition-fields message)))))
+
+	    (let loop ((fields (protoc:message-definition-fields message))
+		       (bindings (list)))
+	      (if (null? fields)
+		  (reverse bindings)
+		  (let ((f (car fields)))
+		    (loop (cdr fields)
+			  (cons (accessor-name message f)
+				(if (eq? (protoc:field-definition-rule f) 
+					 'optional)
+				    (cons (has-name message f) bindings)
+				    bindings))))))))
 
   (define (protoc:builder-exports message builder-naming-context)
     (define field-accessor-name
@@ -373,6 +386,8 @@
 		  (append output (generate-export definition)))))))
 
   (define (protoc:generate-enum enum enum-naming-context)
+    (define enum-predicate-name 
+      (protoc:enum-naming-context-predicate-name enum-naming-context))
     (define enum-type-name 
       (protoc:enum-naming-context-type-name enum-naming-context))
     (define enum-constructor-name
@@ -380,10 +395,15 @@
     (define enum-value-name
       (protoc:enum-naming-context-value-name enum-naming-context))
 
-    `((define-enumeration ,(enum-type-name enum)
-	,(map (lambda (value) (enum-value-name enum value))
-	      (protoc:enum-definition-values enum))
-	,(enum-constructor-name enum))))
+    (let-values (((e0 e1) (gensym-values 'e0 'e1)))	  
+      (let ((values (map (lambda (value) (enum-value-name enum value))
+			 (protoc:enum-definition-values enum))))
+	`((define-enumeration ,(enum-type-name enum) 
+	    ,values ,(enum-constructor-name enum))
+
+	  (define ,e1 (make-enumeration ,(list 'quote values)))
+	  (define (,(enum-predicate-name enum) ,e0)	   
+	    (enum-set-member? ,e0 ,e1))))))
 
   (define (protoc:generate-message message naming-context)
     (define message-naming-context 
@@ -398,6 +418,8 @@
     (define field-accessor-name
       (protoc:message-naming-context-field-accessor-name 
        message-naming-context))
+    (define field-has-name
+      (protoc:message-naming-context-field-has-name message-naming-context))
     (define extension-accessor-name
       (protoc:message-naming-context-extension-accessor-name 
        message-naming-context))
@@ -407,6 +429,13 @@
       (protoc:message-naming-context-writer-name message-naming-context))
     (define message-reader-name
       (protoc:message-naming-context-reader-name message-naming-context))
+
+    (define (generate-field-has-predicate message field)
+      (let-values (((m0) (gensym-values 'm0)))
+	`(define (,(field-has-name message field) ,m0)
+	   (protobuf:field-has-value?
+	    (protobuf:message-field 
+	     ,m0 ,(protoc:field-definition-ordinal field))))))
 
     (let-values (((e0 e1 w0 w1 r0) (gensym-values 'e0 'e1 'w0 'w1 'r0)))
       `((define-record-type ,(message-type-name message)
@@ -422,6 +451,18 @@
 	  (opaque #t)
 	  (parent protobuf:message)
 	  (sealed #t))
+
+	,@(let loop ((fields (protoc:message-definition-fields message))
+		     (bindings (list)))
+	    (if (null? fields)
+		(reverse bindings)
+		(let ((f (car fields)))
+		  (if (eq? (protoc:field-definition-rule f) 'optional)
+		      (loop (cdr fields)
+			    (cons (generate-field-has-predicate message f) 
+				  bindings))
+		      (loop (cdr fields) bindings)))))
+	
 	(define (,(extension-accessor-name message) ,e0 ,e1)
 	  (protobuf:message-extension ,e0 ,(message-type-name message) ,e1))
 	(define (,(extension-has-name message) ,e0 ,e1)
@@ -432,12 +473,54 @@
 	(define (,(message-reader-name message) ,r0)
 	  (protobuf:message-read (,(builder-constructor-name message)) ,r0)))))
 
-  (define (calc-field-default field)
-    (if (eq? (protoc:field-definition-rule field) 'repeated)
-	(quote '())
-	(protobuf:field-type-descriptor-default
-	 (protoc:type-reference-descriptor
-	  (protoc:field-definition-type field)))))
+  (define (calc-field-default field enum-naming-context)
+    (define enum-type-name
+      (protoc:enum-naming-context-type-name enum-naming-context))
+    (define enum-value-name 
+      (protoc:enum-naming-context-value-name enum-naming-context)) 
+    (define (find-enum-value enum value-name)
+      (find (lambda (value) 
+	      (equal? (protoc:enum-value-definition-name value) value-name))
+	    (protoc:enum-definition-values enum)))
+
+    (define (option-default? option) 
+      (eq? (protoc:option-declaration-name option) 'default))
+
+    (define options (protoc:field-definition-options field))
+    (define type-descriptor
+      (protoc:type-reference-descriptor (protoc:field-definition-type field)))
+      
+    (cond ((eq? (protoc:field-definition-rule field) 'repeated) (quote '()))
+	  ((and options (find option-default? options)) =>
+	   (lambda (option)
+	     (let ((value (protoc:option-declaration-value option)))
+	       (cond ((protobuf:enum-field-type-descriptor? type-descriptor)
+		      (let* ((enum 
+			      (protobuf:enum-field-type-descriptor-definition
+			       type-descriptor))
+			     (enum-value (find-enum-value enum value)))
+			(if (not enum-value)
+			    (raise (condition 
+				   (make-assertion-violation)
+				   (make-message-condition 
+				    "Incompatible default value"))))
+			
+			(list (enum-type-name enum)
+			      (enum-value-name enum enum-value))))
+
+		     ((protobuf:field-type-descriptor-predicate type-descriptor)
+		      value)
+		     (list 'quote value)
+		     (else (raise (condition 
+				   (make-assertion-violation)
+				   (make-message-condition 
+				    "Incompatible default value"))))))))
+	  (else (if (protobuf:enum-field-type-descriptor? type-descriptor)
+		    (let* ((enum (protobuf:enum-field-type-descriptor-definition
+				  type-descriptor))
+			   (value (car (protoc:enum-definition-values enum))))
+		      (list (enum-type-name enum) (enum-value-name enum value)))
+		    (protobuf:field-type-descriptor-default type-descriptor)))))
 
   (define (type-reference->type-descriptor-expr type-ref naming-context)
     (define builder-naming-context 
@@ -524,6 +607,8 @@
   (define (protoc:generate-extension extension naming-context)
     (define builder-naming-context
       (protoc:naming-context-builder-naming-context naming-context))
+    (define enum-naming-context
+      (protoc:naming-context-enum-naming-context naming-context))
     (define extension-naming-context
       (protoc:naming-context-extension-naming-context naming-context))
 
@@ -541,7 +626,7 @@
 	    (protoc:field-definition-type extension-field) naming-context)
 	  ,(eq? (protoc:field-definition-rule extension-field) 'repeated)
 	  ,(eq? (protoc:field-definition-rule extension-field) 'required)
-	  ,(calc-field-default extension-field))))
+	  ,(calc-field-default extension-field enum-naming-context))))
 
     (define (make-extension-registrar prototype-binding)
       (lambda (extension-field)
@@ -562,6 +647,8 @@
        (map define-extension fields))))
 
   (define (protoc:generate-builder message naming-context)
+    (define enum-naming-context
+      (protoc:naming-context-enum-naming-context naming-context))
     (define message-naming-context 
       (protoc:naming-context-message-naming-context naming-context))
     (define builder-naming-context 
@@ -616,7 +703,7 @@
 	    (protobuf:message-builder-field
 	     ,b0 ,(protoc:field-definition-ordinal field)))
 	   (,(hashtable-ref field-internal-mutators field #f) ,b0 
-	    ,(calc-field-default field)))))
+	    ,(calc-field-default field enum-naming-context)))))
 
     (define (generate-field-has-predicate message field)
       (let-values (((b0) (gensym-values 'b0)))
@@ -664,7 +751,8 @@
 					  'repeated)
 				    ,(eq? (protoc:field-definition-rule field)
 					  'required)
-				    ,(calc-field-default field)))
+				    ,(calc-field-default 
+				      field enum-naming-context)))
 				
 				fields)))
 		 
@@ -675,7 +763,7 @@
 	  ,@(let loop ((fields fields)
 		       (bindings (list)))
 	      (if (null? fields)
-		  (reverse bindings)
+		  bindings
 		  (let ((f (car fields)))
 		    (if (eq? (protoc:field-definition-rule f) 'repeated)
 			(loop (cdr fields) 
