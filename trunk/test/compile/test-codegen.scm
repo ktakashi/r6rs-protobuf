@@ -17,10 +17,32 @@
 #!r6rs
 
 (import (rnrs))
+(import (rnrs eval))
 (import (srfi :64))
 (import (protobuf compile codegen)
 	(protobuf compile parse))
 
-(define test-package (protobuf:make-package "com.google.protobuf.test" #f))
-(display (protobuf:generate-package test-package)) 
-(newline)
+(test-begin "codegen")
+(test-begin "enum")
+
+(test-group "simple"
+  (let* ((package (protoc:make-package "com.google.protobuf.test" #f))
+	 (enum-definition (protoc:make-enum-definition "test-enum" package)))
+    (protoc:set-enum-definition-values! 
+     enum-definition (list (protoc:make-enum-value-definition "ONE" 0)
+			   (protoc:make-enum-value-definition "TWO" 1)
+			   (protoc:make-enum-value-definition "THREE" 2)))
+
+    (let ((expressions (protoc:generate-enum 
+			enum-definition
+			(protoc:naming-context-enum-naming-context 
+			 protoc:default-naming-context)))
+	  (test-env (environment '(rnrs))))
+      (for-each (lambda (exp) (eval exp test-env)) expressions)
+      (test-assert (eval '(test-enum test-enum-ONE) test-env) 'test-enum-ONE)
+      (test-assert (eval '(test-enum test-enum-TWO) test-env) 'test-enum-TWO)
+      (test-assert (eval '(test-enum test-enum-THREE) test-env) 
+		   'test-enum-THREE))))
+
+(test-end "enum")
+(test-end "codegen")
