@@ -65,9 +65,10 @@
 	  protoc:make-enum-definition
 	  protoc:enum-definition?
 	  protoc:enum-definition-name
-	  protoc:enum-definition-values
+	  protoc:enum-definition-values	  
 	  protoc:enum-definition-options
 	  protoc:enum-definition-parent
+	  protoc:set-enum-definition-values!
 	  
 	  protoc:make-enum-value-definition
 	  protoc:enum-value-definition?
