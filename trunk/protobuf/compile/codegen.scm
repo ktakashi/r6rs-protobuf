@@ -21,9 +21,11 @@
           
           protoc:make-naming-context
 	  protoc:naming-context?
+	  protoc:naming-context-enum-naming-context
 	  
 	  protoc:generate-package
 	  protoc:generate-message
+	  protoc:generate-enum
 	  protoc:generate-extension
 	  protoc:generate-builder)
   (import (rnrs)
