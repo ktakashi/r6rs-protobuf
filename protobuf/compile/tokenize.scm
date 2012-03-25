@@ -1,5 +1,5 @@
 ;; tokenize.scm: .proto tokenization routines for r6rs-protobuf
-;; Copyright (C) 2011 Julian Graham
+;; Copyright (C) 2012 Julian Graham
 
 ;; r6rs-protobuf is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -159,12 +159,32 @@
 	      (else (begin (lexer:unread-char cc) 0))))			   
 	  (read-number-inner (list chr) #f #f)))
 
+    (define (consume-comments)
+      (define (until-newline)
+	(let ((c (lexer:read-char)))
+	  (or (eof-object? c) (eqv? #\newline c) (until-newline))))
+
+      (let ((c (lexer:peek-char)))
+	(cond ((eof-object? c) #f)
+	      ((eqv? c #\/)
+	       (lexer:read-char)
+	       (let ((c (lexer:peek-char)))
+		 (cond ((eof-object? c) #f)
+		       ((eqv? c #\/) (until-newline) #t)
+		       (else (lexer:unread-char c)))))
+	      (else #f))))
+    
     (define (consume-whitespace)
       (let ((c (lexer:peek-char)))
 	(or (eof-object? c)
 	    (and (char-whitespace? c)
 		 (lexer:read-char)
 		 (consume-whitespace)))))
+    
+    (define (consume-whitespace-and-comments)
+      (consume-whitespace)
+      (if (consume-comments) 
+	  (consume-whitespace-and-comments)))
     
     (define (read-ident chr)
       (define (read-rest)
@@ -175,7 +195,7 @@
       (list->string (cons chr (read-rest))))
     
     (lambda ()
-      (consume-whitespace)
+      (consume-whitespace-and-comments)
       (let ((c (lexer:read-char)))
 	(cond ((eof-object? c) '*eoi*)
 	      ((eqv? c #\() (make-token 'LPAREN))
