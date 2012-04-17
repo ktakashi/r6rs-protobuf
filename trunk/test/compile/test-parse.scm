@@ -263,6 +263,29 @@
 (test-begin "message")
 
 (test-begin "field")
+
+(test-group "recursive"
+  (let* ((p ((protoc:make-parser
+	      (mock-lexer 'MESSAGE
+			  '(IDENTIFIER . "Foo")
+			  'LBRACE
+			  'OPTIONAL
+			  '(IDENTIFIER . "Foo")
+			  '(IDENTIFIER . "foo")
+			  'EQUAL 
+			  '(NUM-INTEGER . 1)
+			  'SEMICOLON
+			  'RBRACE))))
+	 (target-root-package (protoc:make-package #f #f))
+	 (q (protoc:make-message-definition "Foo" target-root-package)))
+    (protoc:set-message-definition-fields!
+     q (list (protoc:make-field-definition 
+	      q 'required (protoc:make-type-reference 
+			   "Foo" (protobuf:make-message-field-type-descriptor 
+				  q))
+	      "foo" 1))))
+)
+
 (test-group "options"
   (let* ((p ((protoc:make-parser
 	      (mock-lexer 'MESSAGE
