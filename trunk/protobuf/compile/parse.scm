@@ -216,8 +216,8 @@
 		     protoc:field-definition-options
 		     protoc:set-field-definition-options!))
     (protocol (lambda (p) 
-		(lambda (message rule type type-expr name ordinal . options) 
-		  (p message rule type type-expr name ordinal 
+		(lambda (message rule type name ordinal . options) 
+		  (p message rule type name ordinal 
 		     (if (null? options) options (car options)))))))
  
   (define-record-type (protoc:enum-value-definition
