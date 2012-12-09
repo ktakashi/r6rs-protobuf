@@ -1,0 +1,18 @@
+2012-12-08 version 0.4:
+
+  * Make library generation code safe for multi-definition packages by 
+  generating a separate library for each package-level definition.
+  * New function in `(protobuf protobuf)' `protobuf:version'.
+
+2012-06-12 version 0.3:
+
+  * Add parser support for comments in .proto files.
+
+2011-06-11 version 0.2:
+
+  * Add support for default values for optional fields.
+  * Fix assorted issues related to type-checking of enum fields.
+
+2011-05-08 version 0.1:
+
+  * First public release.
