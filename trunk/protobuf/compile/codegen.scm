@@ -1,5 +1,5 @@
 ;; codegen.scm: code generation API for r6rs-protobuf
-;; Copyright (C) 2011 Julian Graham
+;; Copyright (C) 2012 Julian Graham
 
 ;; r6rs-protobuf is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -100,8 +100,10 @@
     (apply values (syntax->datum (generate-temporaries vars))))
 
   (define (protoc:default-package-name-transformer package)
+    (let ((package-name 
+	   (or (protoc:package-name package) default-package-name)))
     (map string->symbol 
-	 (string-tokenize package (char-set-complement (char-set #\.)))))
+	 (string-tokenize package-name (char-set-complement (char-set #\.))))))
 
   (define (type-name-recursive def)
     (define (type-name-recursive-inner def suffix)
@@ -256,15 +258,14 @@
 	     (protoc:generate-extension definition naming-context))
 	    (else '())))
 
-    `(library ,((protoc:naming-context-library-name naming-context) 
-		(or (protoc:package-name package) default-package-name))
+    `(library ,((protoc:naming-context-library-name naming-context) package)
        (export ,@(protoc:package-exports package naming-context))
        (import 
-	,@(append default-imports
-		  (map (lambda (p) 
-			 ((protoc:naming-context-library-name naming-context)
-			  (or (protoc:package-name p) default-package-name)))
-		       (protoc:package-required-packages package))))
+	,@(append 
+	   default-imports
+	   (map (lambda (p) 
+		  ((protoc:naming-context-library-name naming-context) p))
+		(protoc:package-required-packages package))))
        ,@(let loop ((definitions 
 		      (protoc:package-definitions package))
 		    (output '()))
