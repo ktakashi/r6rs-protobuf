@@ -1,4 +1,4 @@
-Sun May  8 21:37:48 EDT 2011
+Sat Dec  8 19:15:56 EDT 2012
 
 
 r6rs-protobuf
@@ -59,13 +59,15 @@ message-type fields is performed.
 
 The resulting `proto' record may be passed to `protoc:generate-libraries' to
 generate R6RS library forms for the packages defined in the proto. This 
-function returns multiple values, one for each distinct package definition.
+function returns multiple values, one for each top-level message or enum 
+definition for each distinct package definition.
 
-Each resulting library will be given a name corresponding to the package it
-represents - dots are replaced with spaces, so the package name 
-"com.google.protobuf" will be translated to the library name 
-`(com google protobuf)'. Definitions that occur outside of a specified package
-will be added to the `(protobuf default)' library.
+Each resulting library will be given a name corresponding to the package and 
+type definition it represents - dots are replaced with spaces, so the package 
+name "com.google.protobuf" with top-level message definition "MyMessage" will 
+be translated to the library name `(com google protobuf MyMessage)'. 
+Definitions that occur outside of a specified package will produce a library
+whose name has the prefix `(protobuf default)'.
 
 
 Messages
