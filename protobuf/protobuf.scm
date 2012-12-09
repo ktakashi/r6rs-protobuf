@@ -1,5 +1,5 @@
 ;; protobuf.scm: public API for r6rs-protobuf 
-;; Copyright (C) 2012 Julian Graham
+;; Copyright (C) 2011 Julian Graham
 
 ;; r6rs-protobuf is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -17,9 +17,5 @@
 #!r6rs
 
 (library (protobuf protobuf)
-  (export protobuf:message? protobuf:message-builder? protobuf:version)
-  (import (protobuf private) 
-	  (rnrs base))
-  
-  (define (protobuf:version) "0.4")
-)
+  (export protobuf:message? protobuf:message-builder?)
+  (import (protobuf private)))

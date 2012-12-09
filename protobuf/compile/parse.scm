@@ -32,15 +32,12 @@
 	  protoc:make-package
 	  protoc:package
 	  protoc:package?
-	  protoc:package-parent
 	  protoc:package-name
 	  protoc:package-definitions
 	  protoc:package-options
 	  protoc:package-required-packages
 	  protoc:package-subpackages
 	  protoc:set-package-definitions!
-	  protoc:set-package-options!
-	  protoc:set-package-required-packages!
 	  protoc:set-package-subpackages!
 	  
 	  protoc:make-message-definition
