@@ -2,6 +2,7 @@
 
   * Make library generation code safe for multi-definition packages by 
   generating a separate library for each package-level definition.
+  * New function in `(protobuf protobuf)' `protobuf:version'.
 
 2012-06-12 version 0.3:
 
