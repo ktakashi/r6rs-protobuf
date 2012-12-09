@@ -24,18 +24,75 @@
 	  (protobuf compile parse)
 	  (protobuf compile tokenize))
 
+  (define default-package-name-transformer
+    (protoc:naming-context-library-name protoc:default-naming-context))
+  (define default-message-naming-context
+    (protoc:naming-context-message-naming-context
+     protoc:default-naming-context))
+  (define default-enum-naming-context
+    (protoc:naming-context-enum-naming-context protoc:default-naming-context))
+  (define default-builder-naming-context
+    (protoc:naming-context-builder-naming-context
+     protoc:default-naming-context))
+  (define default-extension-naming-context
+    (protoc:naming-context-extension-naming-context
+     protoc:default-naming-context))
+
+  (define (singleton-definition-package-name-transformer package)
+    (let ((default-name (default-package-name-transformer package)))
+      (case (length (protoc:package-definitions package))
+	((0) default-name)
+	((1) (let ((definition (car (protoc:package-definitions package))))
+	       (cond ((protoc:message-definition? definition)
+		      (append default-name 
+			      (list ((protoc:message-naming-context-type-name
+				      default-message-naming-context) 
+				     definition))))
+		     ((protoc:enum-definition? definition)
+		      (append default-name 
+			      (list ((protoc:enum-naming-context-type-name
+				      default-enum-naming-context) 
+				     definition))))
+	       
+		     (else (raise (make-assertion-violation))))))
+	(else (raise (make-assertion-violation))))))
+
+  (define singleton-definition-naming-context
+    (protoc:make-naming-context singleton-definition-package-name-transformer
+				default-enum-naming-context
+				default-message-naming-context 
+				default-builder-naming-context
+				default-extension-naming-context))
+
+  (define (make-singleton-package package definition)
+    (define new-package 
+      (protoc:make-package (protoc:package-name package) 
+			   (protoc:package-parent package)))
+
+    (protoc:set-package-definitions! new-package (list definition))
+
+    new-package)
+
   (define (protoc:read-proto port) 
     ((protoc:make-parser (protoc:make-tokenizer port))))
 
   (define (protoc:generate-libraries proto)
     (define (generate-libraries package)
-      (let ((library (and (not (null? (protoc:package-definitions package)))
-			  (protoc:generate-package 
-			   package protoc:default-naming-context))))
+      (let* ((singleton-packages 
+	     (map (lambda (definition) 
+		    (make-singleton-package package definition))
+		  (protoc:package-definitions package)))
+	     (singleton-libraries
+	      (map (lambda (singleton-package) 
+		     (protoc:generate-package 
+		      singleton-package singleton-definition-naming-context))
+		   singleton-packages)))
 	(let loop ((subpackages (protoc:package-subpackages package))
 		   (libraries (list)))
 	  (if (null? subpackages)
-	      (if library (cons library libraries) libraries)
+	      (if (not (null? singleton-libraries))
+		  (append singleton-libraries libraries)
+		  libraries)
 	      (let* ((p (car subpackages))
 		     (l (generate-libraries p)))
 		(if (null? l)
