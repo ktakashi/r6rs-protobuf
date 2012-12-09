@@ -21,8 +21,15 @@
           
           protoc:make-naming-context
 	  protoc:naming-context?
+	  protoc:naming-context-library-name
+	  protoc:naming-context-message-naming-context
 	  protoc:naming-context-enum-naming-context
+	  protoc:naming-context-builder-naming-context
+	  protoc:naming-context-extension-naming-context
 	  
+	  protoc:enum-naming-context-type-name
+	  protoc:message-naming-context-type-name
+
 	  protoc:generate-package
 	  protoc:generate-message
 	  protoc:generate-enum
