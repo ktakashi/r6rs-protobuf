@@ -1,5 +1,5 @@
 ;; parse.scm: .proto format parsing routines for r6rs-protobuf
-;; Copyright (C) 2011 Julian Graham
+;; Copyright (C) 2012 Julian Graham
 
 ;; r6rs-protobuf is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 	  
 	  protoc:proto?
 	  protoc:make-proto
+	  protoc:proto-imports
 	  protoc:proto-root-package
 	  protoc:proto-options
 
@@ -36,11 +37,9 @@
 	  protoc:package-name
 	  protoc:package-definitions
 	  protoc:package-options
-	  protoc:package-required-packages
 	  protoc:package-subpackages
 	  protoc:set-package-definitions!
 	  protoc:set-package-options!
-	  protoc:set-package-required-packages!
 	  protoc:set-package-subpackages!
 	  
 	  protoc:make-message-definition
@@ -50,6 +49,7 @@
 	  protoc:message-definition-extension-ranges
 	  protoc:message-definition-fields
 	  protoc:message-definition-options
+	  protoc:message-definition-package
 	  protoc:message-definition-parent
 	  protoc:set-message-definition-extension-ranges!
 	  protoc:set-message-definition-fields!
@@ -62,6 +62,7 @@
 	  protoc:make-extension-definition
 	  protoc:extension-definition?
 	  protoc:extension-definition-fields
+	  protoc:extension-definition-package
 	  protoc:extension-definition-parent
 	  protoc:extension-definition-target
 
@@ -70,6 +71,7 @@
 	  protoc:enum-definition-name
 	  protoc:enum-definition-values	  
 	  protoc:enum-definition-options
+	  protoc:enum-definition-package
 	  protoc:enum-definition-parent
 	  protoc:set-enum-definition-values!
 	  
@@ -83,6 +85,7 @@
 	  protoc:type-reference-name
 	  protoc:type-reference-descriptor
 	  protoc:type-reference-location
+	  protoc:set-type-reference-descriptor!
 	  protoc:set-type-reference-location!
 
 	  protoc:make-field-definition
@@ -91,15 +94,13 @@
 	  protoc:field-definition-type
 	  protoc:field-definition-name
 	  protoc:field-definition-ordinal
-	  protoc:field-definition-options)
+	  protoc:field-definition-options
+	  protoc:field-definition-parent)
   (import (rnrs)
  	  (protobuf private)
 	  (protobuf compile tokenize)
 	  (srfi :13)
 	  (srfi :14))
-
-  (define (string-split str chr)
-    (string-tokenize str (char-set-complement (char-set chr))))
 
   (define-record-type (protoc:proto protoc:make-proto protoc:proto?)
     (fields root-package
@@ -121,15 +122,12 @@
   (define-record-type (protoc:package protoc:make-package protoc:package?)
     (fields name 
 	    parent
-	    (mutable required-packages
-		     protoc:package-required-packages
-		     protoc:set-package-required-packages!)
-	    (mutable definitions 
-		     protoc:package-definitions 
-		     protoc:set-package-definitions!)
 	    (mutable subpackages
 		     protoc:package-subpackages
 		     protoc:set-package-subpackages!)
+	    (mutable definitions 
+		     protoc:package-definitions 
+		     protoc:set-package-definitions!)
 	    (mutable options 
 		     protoc:package-options 
 		     protoc:set-package-options!))
@@ -137,11 +135,10 @@
      (lambda (p)
        (lambda (name parent . rest)
 	 (case (length rest)
-	   ((0) (p name parent '() '() '() '()))
-	   ((1) (p name parent (car rest) '() '() '()))
-	   ((2) (p name parent (car rest) (cadr rest) '() '()))
-	   ((3) (p name parent (car rest) (cadr rest) (caddr rest) '()))
-	   ((4) (apply p (cons name (cons parent rest))))
+	   ((0) (p name parent '() '() '()))
+	   ((1) (p name parent (car rest) '() '()))
+	   ((2) (p name parent (car rest) (cadr rest) '()))
+	   ((3) (p name parent (car rest) (cadr rest) (caddr rest)))
 	   (else (raise (make-assertion-violation))))))))
 
   (define-record-type (protoc:extension-range-definition
@@ -248,15 +245,8 @@
   (define (merge-package! scope package) #f)
 
   (define (protoc:make-parser lexer)
-    (define unresolved-type-references (list))
-    (define unresolved-extensions (list))
-
-    (define resolved-type-descriptors (make-hashtable string-hash equal?))
-
-    (define external-packages (make-hashtable string-hash equal?))
-    (define internal-packages (make-hashtable string-hash equal?))
     (define root-package (protoc:make-package #f #f))
-
+    (define internal-packages (make-hashtable string-hash equal?))
     (define proto (protoc:make-proto root-package))
     (define current-package root-package)
 
@@ -301,183 +291,6 @@
       (get-token)
       (if (not (eq? current-category category))
 	  (unexpected-token-error)))
-
-    (define (resolve-type type-reference)
-      (define (resolve-type-relative name context)
-	(define (resolve-type-relative-inner components context)
-	  (let* ((first-component (car components))
-		 (definitions 
-		   (cond ((protoc:package? context)
-			  (protoc:package-definitions context))
-			 ((protoc:message-definition? context)
-			  (protoc:message-definition-definitions context))
-			 ((protoc:extension-definition? context) '())
-			 (else (raise (make-assertion-violation))))))
-	    (let loop ((definitions definitions))
-	      (and (not (null? definitions))
-		   (let ((definition (car definitions)))
-		     (cond ((protoc:message-definition? definition)
-			    (if (equal? first-component 
-					(protoc:message-definition-name 
-					 definition))
-				(if (= (length components) 1)
-				    definition
-				    (resolve-type-relative-inner 
-				     (cdr components) definition))
-			      (loop (cdr definitions))))
-			   ((protoc:enum-definition? definition)
-			    (if (equal? first-component 
-					(protoc:enum-definition-name 
-					 definition))
-				definition
-				(loop (cdr definitions))))
-			   (else (loop (cdr definitions)))))))))
-	(resolve-type-relative-inner (string-split name #\.) context))
-	  
-      (define (resolve-type-upwards name context)
-	(let ((definition (resolve-type-relative name context)))
-	  (or definition
-	      (cond ((protoc:message-definition? context)
-		     (cond ((protoc:message-definition-parent context)
-			    (resolve-type-upwards
-			     name (protoc:message-definition-parent context)))
-			   ((protoc:message-definition-package context)
-			    (resolve-type-upwards 
-			     name (protoc:message-definition-package context)))
-			   (else #f)))
-		    ((protoc:extension-definition? context)
-		     (cond ((protoc:extension-definition-parent context)
-			    (resolve-type-upwards
-			     name (protoc:extension-definition-parent context)))
-			   ((protoc:extension-definition-package context)
-			    (resolve-type-upwards
-			     name (protoc:extension-definition-package 
-				   context)))
-			   (else #f)))
-		    ((protoc:package? context)
-		     (and (protoc:package-parent context)
-			  (resolve-type-upwards
-			   name (protoc:package-parent context))))
-		    (else (raise (make-assertion-violation)))))))
-	
-      (define (resolve-type-downwards name package)
-	(define (strip-package-prefix name package-name)
-	  (and (string-prefix? (string-append package-name ".") name)
-	       (substring name (+ (string-length package-name) 1))))
-
-	(let ((definition (resolve-type-relative name package)))
-	  (or definition
-	      (let ((components (string-split name #\.)))
-		(and (> (length components) 1)
-		     (let loop ((subpackages 
-				 (protoc:package-subpackages package)))
-		       (and (not (null? subpackages))
-			    (let* ((subpackage (car subpackages))
-				   (subname (strip-package-prefix 
-					     name (protoc:package-name 
-						   subpackage))))
-			      (or (and subname
-				       (resolve-type-downwards 
-					subname subpackage))
-				  (loop (cdr subpackages)))))))))))
- 
-      (define (definition->descriptor definition)
-	(define (message-definition->descriptor definition)
-	  (protobuf:make-message-field-type-descriptor 
-	   (protoc:message-definition-name definition) 
-	   'length-delimited #f #f #f #f definition))
-
-	(define (enum-definition->descriptor definition)
-	  (protobuf:make-enum-field-type-descriptor
-	   (protoc:enum-definition-name definition) 
-	   'varint #f #f #f #f definition))
-
-	(cond ((protoc:message-definition? definition)
-	       (message-definition->descriptor definition))
-	      ((protoc:enum-definition? definition)
-	       (enum-definition->descriptor definition))
-	      (else raise (make-assertion-violation))))
-
-      (let* ((location (protoc:type-reference-location type-reference))
-	     (location (cond ((protoc:extension-definition? location) location)
-			     ((protoc:field-definition? location)
-			      (protoc:field-definition-parent location))
-			     (else (raise (make-assertion-violation)))))
-	     (package (cond ((protoc:extension-definition? location)
-			     (protoc:extension-definition-package location))
-			    ((protoc:message-definition? location)
-			     (protoc:message-definition-package location))
-			    (else #f)))
-	     (name (protoc:type-reference-name type-reference))
-	     (descriptor (hashtable-ref resolved-type-descriptors name #f))
-	     (definition (and (not descriptor)
-			      (or (resolve-type-upwards name location)
-				  (resolve-type-downwards name root-package))))
-	     (descriptor
-	      (or descriptor
-		  (and definition (definition->descriptor definition)))))
-
-	(if descriptor
-	    (begin
-	      (if (not (hashtable-contains? resolved-type-descriptors name))
-		  (hashtable-set! resolved-type-descriptors name descriptor))
-	      (let ((definition-package
-		      (cond ((protoc:message-definition? definition)
-			     (protoc:message-definition-package definition))
-			    ((protoc:enum-definition? definition)
-			     (protoc:enum-definition-package definition))
-			    (else (raise (make-assertion-violation)))))
-		    (required-packages (protoc:package-required-packages 
-					package)))
-		(if (and (not (equal? (protoc:package-name definition-package)
-				      (protoc:package-name package)))
-			 (not (memp (lambda (p) 
-				      (equal? (protoc:package-name p)
-					      (protoc:package-name 
-					       definition-package)))
-				    required-packages)))
-		    (protoc:set-package-required-packages! 
-		     package (cons definition-package required-packages))))
-	      (protoc:set-type-reference-descriptor! type-reference descriptor))
-	    (raise (condition 
-		    (make-assertion-violation)
-		    (make-message-condition
-		     (string-append "Reference to unknown type " name)))))))
-
-    (define (resolve-extension extension-def)
-      (define (valid-extension? extension-field message-def)
-	(define idx (protoc:field-definition-ordinal extension-field))
-	(define (extension-field-within-range? extension-range)
-	  (and (>= idx (protoc:extension-range-definition-from extension-range))
-	       (<= idx (protoc:extension-range-definition-to extension-range))))
-	(find extension-field-within-range? 
-	      (protoc:message-definition-extension-ranges message-def)))
-
-      (let* ((type (protoc:extension-definition-target extension-def))
-	     (descriptor (protoc:type-reference-descriptor type)))
-	(if (not (protobuf:message-field-type-descriptor? descriptor))
-	    (raise (condition
-		    (make-assertion-violation)
-		    (make-message-condition
-		     (string-append "Cannot extend non-message type "
-				    (protobuf:field-type-descriptor-name 
-				     descriptor))))))
-	(let ((m (protobuf:message-field-type-descriptor-definition 
-		  descriptor)))
-	  (for-each 
-	   (lambda (extension-field)
-	     (or (valid-extension? extension-field m)
-		 (raise 
-		  (condition
-		   (make-assertion-violation)
-		   (make-message-condition
-		    (string-append "Invalid extension index "
-				   (number->string 
-				    (protoc:field-definition-ordinal 
-				     extension-field))
-				   " for message "
-				   (protoc:message-definition-name m)))))))
-	   (protoc:extension-definition-fields extension-def)))))
 
     (define (parse-type)
       (get-token)
@@ -543,28 +356,9 @@
       (parse-package-element root-package ""))
 
     (define (parse-import)
-      (define (merge-package to from)
-	(protoc:set-package-definitions! 
-	 to (append (protoc:package-definitions to) 
-		    (protoc:package-definitions from)))
-	(for-each (lambda (s)
-		    (let ((ts (find (lambda (x)
-				      (equal? (protoc:package-name x)
-					      (protoc:package-name s)))
-				    (protoc:package-subpackages to))))
-		      (if ts
-			  (merge-package ts s)
-			  (protoc:set-package-subpackages! 
-			   to (cons s (protoc:package-subpackages to))))))
-		  (protoc:package-subpackages from)))
-      
       (assert-next-category 'STRING-LITERAL)
-      (let* ((lexer (protoc:make-tokenizer 
-		     (open-input-file current-value)))
-	     (parser (protoc:make-parser lexer))
-	     (proto (parser)))
-	
-	(merge-package root-package (protoc:proto-root-package proto)))
+      (protoc:set-proto-imports!
+       proto (cons current-value (protoc:proto-imports proto)))
       (assert-next-category 'SEMICOLON))
 
     (define (parse-enum parent)
@@ -641,10 +435,6 @@
 		 (options (parse-maybe-field-options))
 		 (fd (protoc:make-field-definition 
 		      parent rule type field-name index options)))
-	    
-	    (if (not (protoc:type-reference-descriptor type))
-		(set! unresolved-type-references
-		      (cons type unresolved-type-references)))
 	    
 	    (assert-next-category 'SEMICOLON)
 	    (protoc:set-type-reference-location! type fd)
@@ -759,9 +549,6 @@
 	     (extension-def (protoc:make-extension-definition 
 			     type parent current-package)))
 
-	(set! unresolved-type-references (cons type unresolved-type-references))
-	(set! unresolved-extensions (cons extension-def unresolved-extensions))
-
 	(protoc:set-type-reference-location! type extension-def)
 	(assert-next-category 'LBRACE)
 	(parse-extension-element extension-def)))
@@ -794,8 +581,6 @@
 	  (else (unexpected-token-error))))
       
       (parse-proto-elements)
-      (for-each resolve-type unresolved-type-references)
-      (for-each resolve-extension unresolved-extensions)
       proto)
       
     (lambda () (parse-proto)))
