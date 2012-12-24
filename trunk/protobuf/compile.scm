@@ -23,7 +23,8 @@
 	  (protobuf compile codegen)
 	  (protobuf compile parse)
 	  (protobuf compile resolve)
-	  (protobuf compile tokenize))
+	  (protobuf compile tokenize)
+	  (protobuf private))
 
   (define default-package-name-transformer
     (protoc:naming-context-library-name protoc:default-naming-context))
@@ -78,9 +79,78 @@
     ((protoc:make-parser (protoc:make-tokenizer port))))
 
   (define (protoc:generate-libraries proto . rest)
+    (define (fixup-package-dependencies! package)
+      (define (determine-declaring-package-and-type def)
+	(cond ((protoc:enum-definition? def)
+	       (if (protoc:enum-definition-parent def)
+		   (determine-declaring-package-and-type
+		    (protoc:enum-definition-parent def))
+		   (values (protoc:enum-definition-package def) def)))
+	      ((protoc:extension-definition? def)
+	       (if (protoc:extension-definition-parent def) 
+		   (determine-declaring-package-and-type
+		    (protoc:extension-definition-parent def))
+		   (values (protoc:extension-definition-package def) def)))
+	      ((protoc:message-definition? def)
+	       (if (protoc:message-definition-parent def)
+		   (determine-declaring-package-and-type
+		    (protoc:message-definition-parent def))
+		   (values (protoc:message-definition-package def) def)))
+	      (else (raise (make-assertion-violation)))))
+
+      (define (fixup-field-dependency! field-definition)
+	(let* ((field-type-reference 
+		(protoc:field-definition-type field-definition))
+	       (field-type (protoc:type-reference-descriptor 
+			    field-type-reference))
+	       (definition
+		 (cond
+		  ((protobuf:message-field-type-descriptor? field-type)
+		   (protobuf:message-field-type-descriptor-definition 
+		    field-type))
+		  ((protobuf:enum-field-type-descriptor? field-type)
+		   (protobuf:enum-field-type-descriptor-definition 
+		    field-type))
+		  (else #f))))
+	  (if definition
+	      (let-values (((package definition) 
+			    (determine-declaring-package-and-type definition)))
+		(let ((singleton-package 
+		       (make-singleton-package package definition)))
+		  (cond ((protoc:enum-definition? definition)
+			 (protoc:set-enum-definition-package! 
+			  definition singleton-package))
+			((protoc:extension-definition? definition)
+			 (protoc:set-extension-definition-package! 
+			  definition singleton-package))
+			((protoc:message-definition? definition)
+			 (protoc:set-message-definition-package! 
+			  definition singleton-package))
+			(else (raise (make-assertion-violation)))))))))
+
+      (let loop ((definitions (protoc:package-definitions package)))
+	(or (null? definitions)
+	    (let ((def (car definitions)))
+	      (cond ((protoc:message-definition? def)
+		     (let* ((fields (protoc:message-definition-fields def)))
+		       (for-each fixup-field-dependency! 
+				 (protoc:message-definition-fields def))
+		       (loop (append 
+			      (protoc:message-definition-definitions def)
+			      (cdr definitions)))))
+
+		    ((protoc:extension-definition? def)
+		     (let* ((fields (protoc:extension-definition-fields def)))
+		       (for-each fixup-field-dependency! 
+				 (protoc:extension-definition-fields def))
+		       (loop (cdr definitions))))
+		    
+		    (else (loop (cdr definitions))))))))
+
     (define resolution-basedir (and (not (null? rest)) (car rest)))
 
     (define (generate-libraries package)
+      (fixup-package-dependencies! package)
       (let* ((singleton-packages 
 	     (map (lambda (definition) 
 		    (make-singleton-package package definition))
