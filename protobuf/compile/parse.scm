@@ -53,6 +53,7 @@
 	  protoc:message-definition-parent
 	  protoc:set-message-definition-extension-ranges!
 	  protoc:set-message-definition-fields!
+	  protoc:set-message-definition-package!
 
 	  protoc:make-extension-range-definition
 	  protoc:extension-range-definition?
@@ -65,6 +66,7 @@
 	  protoc:extension-definition-package
 	  protoc:extension-definition-parent
 	  protoc:extension-definition-target
+	  protoc:set-extension-definition-package!
 
 	  protoc:make-enum-definition
 	  protoc:enum-definition?
@@ -73,6 +75,7 @@
 	  protoc:enum-definition-options
 	  protoc:enum-definition-package
 	  protoc:enum-definition-parent
+	  protoc:set-enum-definition-package!
 	  protoc:set-enum-definition-values!
 	  
 	  protoc:make-enum-value-definition
@@ -151,7 +154,13 @@
 		       protoc:extension-definition?)
     (fields target 
 	    parent
-	    package
+
+	    ;; TODO: Package should not be mutable!
+	    
+	    (mutable package
+		     protoc:extension-definition-package
+		     protoc:set-extension-definition-package!)
+
 	    (mutable fields 
 		     protoc:extension-definition-fields
 		     protoc:set-extension-definition-fields!))
@@ -170,7 +179,13 @@
 		       protoc:message-definition?)
     (fields name
 	    parent
-	    package
+
+	    ;; TODO: Package should not be mutable!
+	    
+	    (mutable package
+		     protoc:message-definition-package
+		     protoc:set-message-definition-package!)
+
 	    (mutable extension-ranges
 		     protoc:message-definition-extension-ranges
 		     protoc:set-message-definition-extension-ranges!)
@@ -230,7 +245,13 @@
 		       protoc:enum-definition?)
     (fields name 
 	    parent
-	    package
+
+	    ;; TODO: Package should not be mutable!
+	    
+	    (mutable package
+		     protoc:enum-definition-package
+		     protoc:set-enum-definition-package!)
+
 	    (mutable options 
 		     protoc:enum-definition-options
 		     protoc:set-enum-definition-options!)

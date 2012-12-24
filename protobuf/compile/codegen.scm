@@ -244,6 +244,81 @@
     (define extension-naming-context
       (protoc:naming-context-extension-naming-context naming-context))
 
+    (define (determine-imports package naming-context local-name)
+      (define (determine-declaring-package definition)
+	(cond ((protoc:enum-definition? definition)
+	       (if (protoc:enum-definition-parent definition)
+		   (determine-declaring-package
+		    (protoc:enum-definition-parent definition))
+		   (protoc:enum-definition-package definition)))
+	      ((protoc:extension-definition? definition)
+	       (if (protoc:extension-definition-parent definition)
+		   (determine-declaring-package
+		    (protoc:extension-definition-parent definition))
+		   (protoc:extension-definition-package definition)))
+	      ((protoc:message-definition? definition)
+	       (if (protoc:message-definition-parent definition)
+		   (determine-declaring-package
+		    (protoc:message-definition-parent definition))
+		   (protoc:message-definition-package definition)))
+	      (else (raise (make-assertion-violation)))))
+
+      (define (packages-for-fields field-definitions required-libraries)
+	(if (null? field-definitions)
+	    required-libraries
+	    (let* ((field-definition (car field-definitions))
+		   (field-type-reference 
+		    (protoc:field-definition-type field-definition))
+		   (field-type (protoc:type-reference-descriptor 
+				field-type-reference))
+		   (definition
+		     (cond
+		      ((protobuf:message-field-type-descriptor? field-type)
+		       (protobuf:message-field-type-descriptor-definition 
+			field-type))
+		      ((protobuf:enum-field-type-descriptor? field-type)
+		       (protobuf:enum-field-type-descriptor-definition 
+			field-type))
+		      (else #f))))
+	      (packages-for-fields
+	       (cdr field-definitions)	       
+	       (if definition
+		   (let* ((package (determine-declaring-package definition))
+			  (library ((protoc:naming-context-library-name 
+				     naming-context) package)))
+
+		     (if (or (equal? library local-name)
+			     (member library required-libraries))
+			 required-libraries
+			 (cons library required-libraries)))
+		   required-libraries)))))
+
+      (let loop ((definitions (protoc:package-definitions package))
+		 (imported-libraries (list)))
+	(if (null? definitions)
+	    imported-libraries
+	    (let ((definition (car definitions)))
+	      (cond ((protoc:message-definition? definition)
+		     (let* ((fields 
+			     (protoc:message-definition-fields definition))
+			    (sub-definitions
+			     (protoc:message-definition-definitions 
+			      definition)))
+		       (loop (append sub-definitions (cdr definitions))
+			     (append (packages-for-fields 
+				      fields imported-libraries) 
+				     imported-libraries))))
+
+		    ((protoc:extension-definition? definition)
+		     (let* ((fields
+			     (protoc:extension-definition-fields definition)))
+		       (loop (cdr definitions)
+			     (append (packages-for-fields 
+				      fields imported-libraries) 
+				     imported-libraries))))
+
+		    (else (loop (cdr definitions) imported-libraries)))))))
+
     (define (generate-definition definition)
       (cond ((protoc:message-definition? definition)
 	     (append
@@ -258,22 +333,20 @@
 	     (protoc:generate-extension definition naming-context))
 	    (else '())))
 
-    `(library ,((protoc:naming-context-library-name naming-context) package)
-       (export ,@(protoc:package-exports package naming-context))
-       (import 
-	,@(append 
-	   default-imports
-	   (map (lambda (p) 
-		  ((protoc:naming-context-library-name naming-context) p))
-		(protoc:package-required-packages package))))
-       ,@(let loop ((definitions 
-		      (protoc:package-definitions package))
-		    (output '()))
-	   (if (or (not definitions) (null? definitions))
-	       (reverse output)
-	       (let ((definition (car definitions)))
-		 (loop (cdr definitions) 
-		       (append output (generate-definition definition))))))))
+    (let ((lib ((protoc:naming-context-library-name naming-context) package)))
+      `(library ,lib
+         (export ,@(protoc:package-exports package naming-context))
+	 (import ,@(append default-imports 
+			   (determine-imports package naming-context lib)))
+	 ,@(let loop ((definitions 
+			(protoc:package-definitions package))
+		      (output '()))
+	     (if (or (not definitions) (null? definitions))
+		 (reverse output)
+		 (let ((definition (car definitions)))
+		   (loop (cdr definitions) 
+			 (append output (generate-definition 
+					 definition)))))))))
   
   (define (protoc:enum-exports enum enum-naming-context)
     (list ((protoc:enum-naming-context-type-name enum-naming-context) enum)
