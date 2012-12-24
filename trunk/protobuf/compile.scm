@@ -1,5 +1,5 @@
 ;; compile: r6rs-protobuf compiler front-end
-;; Copyright (C) 2011 Julian Graham
+;; Copyright (C) 2012 Julian Graham
 
 ;; SCSS is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@
   (import (rnrs)
 	  (protobuf compile codegen)
 	  (protobuf compile parse)
+	  (protobuf compile resolve)
 	  (protobuf compile tokenize))
 
   (define default-package-name-transformer
@@ -76,7 +77,9 @@
   (define (protoc:read-proto port) 
     ((protoc:make-parser (protoc:make-tokenizer port))))
 
-  (define (protoc:generate-libraries proto)
+  (define (protoc:generate-libraries proto . rest)
+    (define resolution-basedir (and (not (null? rest)) (car rest)))
+
     (define (generate-libraries package)
       (let* ((singleton-packages 
 	     (map (lambda (definition) 
@@ -98,6 +101,7 @@
 		(if (null? l)
 		    (loop (cdr subpackages) libraries)
 		    (loop (cdr subpackages) (append l libraries))))))))
-			
+
+    (protoc:resolve proto resolution-basedir)
     (apply values (generate-libraries (protoc:proto-root-package proto))))
 )
