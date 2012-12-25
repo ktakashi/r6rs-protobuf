@@ -552,7 +552,13 @@
 		(protobuf:field-type-descriptor-wire-type 
 		 type-descriptor))))
 
-	(serialize port value))
+	(if (protobuf:message? value)
+	    (call-with-values
+	      (lambda () (open-bytevector-output-port))
+	      (lambda (sub-port get-bytevector)
+		(protobuf:write-message sub-port value)
+		(protobuf:write-bytes port (get-bytevector))))
+	    (serialize port value)))
 
       (if (protobuf:field-has-value? field)
 	  (if (protobuf:field-descriptor-repeated? field-descriptor)
