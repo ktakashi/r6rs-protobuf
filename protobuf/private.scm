@@ -1,5 +1,5 @@
 ;; private.scm: private definitions and support API for r6rs-protobuf
-;; Copyright (C) 2011 Julian Graham
+;; Copyright (C) 2012 Julian Graham
 
 ;; r6rs-protobuf is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -272,8 +272,12 @@
     (protocol 
      (lambda (p)
        (lambda (type field-descriptors) 
-	 (p type 
-	    (map protobuf:make-field field-descriptors) 
+	 (p type
+	    (map protobuf:make-field 
+		 (list-sort (lambda (f1 f2)
+			      (< (protobuf:field-descriptor-index f1)
+				 (protobuf:field-descriptor-index f2)))
+			    field-descriptors))
 	    (make-eqv-hashtable))))))
 
   (define (protobuf:message-field message index)
