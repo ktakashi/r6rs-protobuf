@@ -621,6 +621,7 @@
       (protoc:message-naming-context-predicate-name message-naming-context))
 
     (define p0 (gensym-values 'p0))
+    (define p1 (gensym-values 'p1))
 
     (define (message-field-type-descriptor-expr descriptor)
       `(protobuf:make-message-field-type-descriptor
@@ -637,11 +638,30 @@
 	,(protobuf:field-type-descriptor-default descriptor)))
 
       (define (enum-field-type-descriptor-expr descriptor)
+	(define enum 
+	  (protobuf:enum-field-type-descriptor-definition descriptor))
+	(define enum-type-name
+	  (protoc:enum-naming-context-type-name enum-naming-context))
+	(define enum-value-name 
+	  (protoc:enum-naming-context-value-name enum-naming-context)) 
+
 	`(protobuf:make-enum-field-type-descriptor
 	  ,(protobuf:field-type-descriptor-name descriptor)
 	  ,(list 'quote (protobuf:field-type-descriptor-wire-type descriptor))
-	  protobuf:write-varint
-	  protobuf:read-varint
+	  (lambda (,p0 ,p1)
+	    (protobuf:write-varint
+	     ,p0 (case ,p1
+		   ,@(map (lambda (value)
+			    `((,(enum-value-name enum value))
+			      ,(protoc:enum-value-definition-ordinal value)))
+			  (protoc:enum-definition-values enum)))))
+	  (lambda (,p0)
+	    (case (protobuf:read-varint ,p0)
+	      ,@(map (lambda (value)
+		       `((,(protoc:enum-value-definition-ordinal value))
+			 (,(enum-type-name enum) 
+			  ,(enum-value-name enum value))))
+		     (protoc:enum-definition-values enum))))
 	  ,(enum-predicate-name
 	    (protobuf:enum-field-type-descriptor-definition descriptor))
 	  ,(protobuf:field-type-descriptor-default descriptor)))
