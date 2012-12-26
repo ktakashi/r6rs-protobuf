@@ -315,9 +315,8 @@
 				 (protoc:make-tokenizer 
 				  (open-input-file filename)))))
 		  (resolution-basedir
-		   (and (absolute? filename)
-			(substring 
-			 filename 0 (string-index-right filename #\x002f))))
+		   (substring
+		    filename 0 (string-index-right filename #\x002f)))
 		  (other-context (protoc:make-type-resolution-context
 				  (clone-package
 				   (protoc:proto-root-package other-proto))
