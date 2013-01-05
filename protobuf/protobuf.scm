@@ -21,5 +21,5 @@
   (import (protobuf private) 
 	  (rnrs base))
   
-  (define (protobuf:version) "0.4")
+  (define (protobuf:version) "0.5")
 )
