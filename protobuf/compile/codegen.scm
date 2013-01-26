@@ -1,5 +1,5 @@
 ;; codegen.scm: code generation API for r6rs-protobuf
-;; Copyright (C) 2012 Julian Graham
+;; Copyright (C) 2013 Julian Graham
 
 ;; r6rs-protobuf is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -420,7 +420,8 @@
 			(loop (cdr fields) 
 			      (append (list (field-accessor-name message field)
 					    (field-mutator-name message field)
-					    (field-clear-name message field))))
+					    (field-clear-name message field))
+				      bindings))
 			(loop (cdr fields)
 			      (append (list (field-accessor-name message field)
 					    (field-mutator-name message field)
@@ -488,6 +489,10 @@
 	  (define (,(enum-predicate-name enum) ,e0)	   
 	    (enum-set-member? ,e0 ,e1))))))
 
+  (define (field-less f1 f2)
+    (< (protoc:field-definition-ordinal f1)
+       (protoc:field-definition-ordinal f2)))
+
   (define (protoc:generate-message message naming-context)
     (define message-naming-context 
       (protoc:naming-context-message-naming-context naming-context))
@@ -522,7 +527,9 @@
 
     (let-values (((e0 e1 w0 w1 r0) (gensym-values 'e0 'e1 'w0 'w1 'r0)))
       `((define-record-type ,(message-type-name message)
-	  (fields ,@(let ((fields (protoc:message-definition-fields message)))
+	  (fields ,@(let ((fields (list-sort 
+				   field-less (protoc:message-definition-fields 
+					       message))))
 		      (if fields
 			  (map (lambda (field) 
 				 (list 'immutable
@@ -736,7 +743,8 @@
 	`(protobuf:register-extension
 	  ,prototype-binding ,(extension-name extension extension-field))))
 
-    (let ((fields (protoc:extension-definition-fields extension)))
+    (let ((fields (list-sort 
+		   field-less (protoc:extension-definition-fields extension))))
       (append 
        (if (null? fields)
 	   '()
@@ -824,7 +832,8 @@
 	   (,(hashtable-ref field-internal-mutators field #f) ,b0 ,b1))))
     
     (let-values (((b0 b1 b2 b3) (gensym-values 'b0 'b1 'b2 'b3)))
-      (let ((fields (protoc:message-definition-fields message)))
+      (let ((fields (list-sort field-less
+			       (protoc:message-definition-fields message))))
 	`((define-record-type (,(builder-type-name message)
 			       ,(builder-constructor-name message)
 			       ,(builder-predicate-name message))
