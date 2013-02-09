@@ -1,6 +1,11 @@
+2013-02-08 version 0.6:
+
+  * Fix serious deserialization issues related to field order.
+  * Add the `protoc-scm' compiler front-end under `contrib/guile'.
+
 2013-01-05 version 0.5:
 
-  * `protobuf:generte-libraries' in `(protobuf compile)' now accepts an 
+  * `protobuf:generate-libraries' in `(protobuf compile)' now accepts an 
   optional argument giving a base directory for resolving import directives.
   * Make type resolution and dependency generation more sophisticated in order 
   to support multiple levels of import directives with different relative paths
