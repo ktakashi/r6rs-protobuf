@@ -1,0 +1,39 @@
+2014-03-31 version 0.7:
+
+  * Fix serious deserialization issues related to embedded message fields.
+  * Remove export of non-existent symbol.
+
+2013-02-08 version 0.6:
+
+  * Fix serious deserialization issues related to field order.
+  * Add the `protoc-scm' compiler front-end under `contrib/guile'.
+
+2013-01-05 version 0.5:
+
+  * `protobuf:generate-libraries' in `(protobuf compile)' now accepts an 
+  optional argument giving a base directory for resolving import directives.
+  * Make type resolution and dependency generation more sophisticated in order 
+  to support multiple levels of import directives with different relative paths
+  and per-.proto visibility of imported types.
+  * Write message fields in order for politeness.
+  * Fix serious issues related to serializing message fields of an enumerated
+  or message type.
+
+2012-12-08 version 0.4:
+
+  * Make library generation code safe for multi-definition packages by 
+  generating a separate library for each package-level definition.
+  * New function in `(protobuf protobuf)' `protobuf:version'.
+
+2012-06-12 version 0.3:
+
+  * Add parser support for comments in .proto files.
+
+2011-06-11 version 0.2:
+
+  * Add support for default values for optional fields.
+  * Fix assorted issues related to type-checking of enum fields.
+
+2011-05-08 version 0.1:
+
+  * First public release.

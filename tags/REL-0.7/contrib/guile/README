@@ -1,0 +1,29 @@
+Fri Feb  8 15:01:52 UTC 2013
+
+
+protoc-scm
+==========
+
+This script is a GNU Guile front-end to the R6RS Protocol Buffers compiler, and
+is intended as a substitute for the `protoc' tool provided in the official 
+Google Protocol Buffers distribution. Its usage is likewise similar to that of
+`protoc':
+
+  $> protoc-scm [OPTION ...] PROTO_FILE ...
+
+`protoc-scm' parses the specific .proto files, resolving imports relative to
+the current working directory (and any paths specified by the `-I' option) and
+writes the correspondingly-generated Scheme code to the path given by the 
+required `--scm_out' directive, creating sub-directories as necessary, rooted 
+at that location.
+
+For example, the following invocation of `protoc-scm':
+
+  $> protoc-scm --scm_out=. Test.proto
+
+...will parse and compile the Test.proto definition, and create the file (and
+parent directories):
+
+  protobuf/default/Test.scm
+
+...underneath the current working directory.
