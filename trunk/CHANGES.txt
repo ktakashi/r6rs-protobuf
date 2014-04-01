@@ -1,3 +1,8 @@
+2014-03-31 version 0.7:
+
+  * Fix serious deserialization issues related to embedded message fields.
+  * Remove export of non-existent symbol.
+
 2013-02-08 version 0.6:
 
   * Fix serious deserialization issues related to field order.
