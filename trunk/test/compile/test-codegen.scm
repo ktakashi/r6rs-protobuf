@@ -20,9 +20,82 @@
 (import (rnrs eval))
 (import (srfi :64))
 (import (protobuf compile codegen)
-	(protobuf compile parse))
+	(protobuf compile parse)
+	(protobuf private))
 
 (test-begin "codegen")
+
+(test-begin "message")
+
+(test-group "embedded"
+  (let* ((package (protoc:make-package "com.google.protobuf.test" #f))
+	 (message-definition-1
+	  (protoc:make-message-definition "TestMessage1" package))
+	 (message-definition-2
+	  (protoc:make-message-definition "TestMessage2" package))
+
+	 (message-field-1
+	  (protoc:make-field-definition
+	   message-definition-1 'required 
+	   (protoc:make-type-reference 
+	    "TestMessage2" 
+	    (protobuf:make-message-field-type-descriptor
+	     "com.google.protobuf.test.TestMessage2" 'length-delimited #f #f #f
+	     #f message-definition-2))
+	   "msg" 1))
+	 (message-field-2
+	  (protoc:make-field-definition
+	   message-definition-1 'required 
+	   (protoc:make-type-reference "int32" protobuf:field-type-int32) 
+	   "num" 2))
+
+	 (message-field-3
+	  (protoc:make-field-definition
+	   message-definition-2 'required 
+	   (protoc:make-type-reference "string" protobuf:field-type-string) 
+	   "text" 1))
+
+	 (test-env (environment '(rnrs) '(protobuf private))))
+
+    (protoc:set-message-definition-fields! 
+     message-definition-1 (list message-field-1 message-field-2))
+    (protoc:set-message-definition-fields! 
+     message-definition-2 (list message-field-3))
+
+    (for-each (lambda (exp) (eval exp test-env)) 
+	      (append
+	       (protoc:generate-message
+		message-definition-1 protoc:default-naming-context)
+	       (protoc:generate-builder
+		message-definition-1 protoc:default-naming-context)
+	       (protoc:generate-message
+		message-definition-2 protoc:default-naming-context)
+	       (protoc:generate-builder
+		message-definition-2 protoc:default-naming-context)))
+
+    (let ((mm1 
+	   (eval '(let ((b2 (make-TestMessage2-builder))
+			(b1 (make-TestMessage1-builder)))
+		    (set-TestMessage1-builder-num! b1 123)
+		    (set-TestMessage2-builder-text! b2 "Hello, 2!")
+		    (set-TestMessage1-builder-msg! 
+		     b1 (TestMessage2-builder-build b2))
+		    (let ((m1 (TestMessage1-builder-build b1)))
+		      (let-values 
+			  (((port proc) (open-bytevector-output-port)))
+			(TestMessage1-write m1 port)
+			(TestMessage1-read 
+			 (open-bytevector-input-port (proc))))))
+		 test-env)))
+
+      (test-assert 
+       (eqv? (eval `(TestMessage1-num ,mm1) test-env) 123))
+      (test-assert 
+       (equal? (eval `(TestMessage2-text (TestMessage1-msg ,mm1)) test-env) 
+	       "Hello, 2!")))))
+
+(test-end "message")
+
 (test-begin "enum")
 
 (test-group "simple"
