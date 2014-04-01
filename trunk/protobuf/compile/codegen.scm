@@ -1,5 +1,5 @@
 ;; codegen.scm: code generation API for r6rs-protobuf
-;; Copyright (C) 2013 Julian Graham
+;; Copyright (C) 2014 Julian Graham
 
 ;; r6rs-protobuf is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -232,7 +232,11 @@
 				protoc:default-extension-naming-context))
 
   (define default-imports
-    '((rnrs base) (rnrs enums) (rnrs records syntactic) (protobuf private)))
+    '((rnrs base) 
+      (rnrs enums) 
+      (rnrs io ports) 
+      (rnrs records syntactic) 
+      (protobuf private)))
 
   (define (protoc:generate-package package naming-context)
     (define enum-naming-context
@@ -639,81 +643,82 @@
 	  (protobuf:message-read 
 	   (,(builder-constructor-name 
 	      (protobuf:message-field-type-descriptor-definition descriptor)))
-	   ,p0))
+	   (open-bytevector-input-port
+	    (get-bytevector-n ,p0 (protobuf:read-varint ,p0)))))
 	,(message-predicate-name 
 	  (protobuf:message-field-type-descriptor-definition descriptor))
 	,(protobuf:field-type-descriptor-default descriptor)))
-
-      (define (enum-field-type-descriptor-expr descriptor)
-	(define enum 
+    
+    (define (enum-field-type-descriptor-expr descriptor)
+      (define enum 
+	(protobuf:enum-field-type-descriptor-definition descriptor))
+      (define enum-type-name
+	(protoc:enum-naming-context-type-name enum-naming-context))
+      (define enum-value-name 
+	(protoc:enum-naming-context-value-name enum-naming-context)) 
+      
+      `(protobuf:make-enum-field-type-descriptor
+	,(protobuf:field-type-descriptor-name descriptor)
+	,(list 'quote (protobuf:field-type-descriptor-wire-type descriptor))
+	(lambda (,p0 ,p1)
+	  (protobuf:write-varint
+	   ,p0 (case ,p1
+		 ,@(map (lambda (value)
+			  `((,(enum-value-name enum value))
+			    ,(protoc:enum-value-definition-ordinal value)))
+			(protoc:enum-definition-values enum)))))
+	(lambda (,p0)
+	  (case (protobuf:read-varint ,p0)
+	    ,@(map (lambda (value)
+		     `((,(protoc:enum-value-definition-ordinal value))
+		       (,(enum-type-name enum) 
+			,(enum-value-name enum value))))
+		   (protoc:enum-definition-values enum))))
+	,(enum-predicate-name
 	  (protobuf:enum-field-type-descriptor-definition descriptor))
-	(define enum-type-name
-	  (protoc:enum-naming-context-type-name enum-naming-context))
-	(define enum-value-name 
-	  (protoc:enum-naming-context-value-name enum-naming-context)) 
-
-	`(protobuf:make-enum-field-type-descriptor
-	  ,(protobuf:field-type-descriptor-name descriptor)
-	  ,(list 'quote (protobuf:field-type-descriptor-wire-type descriptor))
-	  (lambda (,p0 ,p1)
-	    (protobuf:write-varint
-	     ,p0 (case ,p1
-		   ,@(map (lambda (value)
-			    `((,(enum-value-name enum value))
-			      ,(protoc:enum-value-definition-ordinal value)))
-			  (protoc:enum-definition-values enum)))))
-	  (lambda (,p0)
-	    (case (protobuf:read-varint ,p0)
-	      ,@(map (lambda (value)
-		       `((,(protoc:enum-value-definition-ordinal value))
-			 (,(enum-type-name enum) 
-			  ,(enum-value-name enum value))))
-		     (protoc:enum-definition-values enum))))
-	  ,(enum-predicate-name
-	    (protobuf:enum-field-type-descriptor-definition descriptor))
-	  ,(protobuf:field-type-descriptor-default descriptor)))
-
-      (let ((descriptor (protoc:type-reference-descriptor type-ref)))	
-	(cond
-	  ((eq? descriptor protobuf:field-type-double)
-	   'protobuf:field-type-double)
-	  ((eq? descriptor protobuf:field-type-float) 
-	   'protobuf:field-type-float)
-	  ((eq? descriptor protobuf:field-type-int32) 
-	   'protobuf:field-type-int32)
-	  ((eq? descriptor protobuf:field-type-int64) 
-	   'protobuf:field-type-int64)
-	  ((eq? descriptor protobuf:field-type-uint32) 
-	   'protobuf:field-type-uint32)
-	  ((eq? descriptor protobuf:field-type-uint64) 
-	   'protobuf:field-type-uint64)
-	  ((eq? descriptor protobuf:field-type-sint32) 
-	   'protobuf:field-type-sint32)
-	  ((eq? descriptor protobuf:field-type-sint64) 
-	   'protobuf:field-type-sint64)
-	  ((eq? descriptor protobuf:field-type-fixed32) 
-	   'protobuf:field-type-fixed32)
-	  ((eq? descriptor protobuf:field-type-fixed64) 
-	   'protobuf:field-type-sfixed32)
-	  ((eq? descriptor protobuf:field-type-sfixed32) 
-	   'protobuf:field-type-sfixed32)
-	  ((eq? descriptor protobuf:field-type-sfixed64) 
-	   'protobuf:field-type-sfixed64)
-	  ((eq? descriptor protobuf:field-type-bool) 
-	   'protobuf:field-type-bool)
-	  ((eq? descriptor protobuf:field-type-string) 
-	   'protobuf:field-type-string)
-	  ((eq? descriptor protobuf:field-type-bytes) 
-	   'protobuf:field-type-bytes)      
-	  
-	  ;; It must be a user-defined type
-	  
-	  ((protobuf:message-field-type-descriptor? descriptor)
-	   (message-field-type-descriptor-expr descriptor))
-	  ((protobuf:enum-field-type-descriptor? descriptor)
-	   (enum-field-type-descriptor-expr descriptor))
-	  (else (raise (make-assertion-violation))))))
-
+	,(protobuf:field-type-descriptor-default descriptor)))
+    
+    (let ((descriptor (protoc:type-reference-descriptor type-ref)))	
+      (cond
+       ((eq? descriptor protobuf:field-type-double)
+	'protobuf:field-type-double)
+       ((eq? descriptor protobuf:field-type-float) 
+	'protobuf:field-type-float)
+       ((eq? descriptor protobuf:field-type-int32) 
+	'protobuf:field-type-int32)
+       ((eq? descriptor protobuf:field-type-int64) 
+	'protobuf:field-type-int64)
+       ((eq? descriptor protobuf:field-type-uint32) 
+	'protobuf:field-type-uint32)
+       ((eq? descriptor protobuf:field-type-uint64) 
+	'protobuf:field-type-uint64)
+       ((eq? descriptor protobuf:field-type-sint32) 
+	'protobuf:field-type-sint32)
+       ((eq? descriptor protobuf:field-type-sint64) 
+	'protobuf:field-type-sint64)
+       ((eq? descriptor protobuf:field-type-fixed32) 
+	'protobuf:field-type-fixed32)
+       ((eq? descriptor protobuf:field-type-fixed64) 
+	'protobuf:field-type-sfixed32)
+       ((eq? descriptor protobuf:field-type-sfixed32) 
+	'protobuf:field-type-sfixed32)
+       ((eq? descriptor protobuf:field-type-sfixed64) 
+	'protobuf:field-type-sfixed64)
+       ((eq? descriptor protobuf:field-type-bool) 
+	'protobuf:field-type-bool)
+       ((eq? descriptor protobuf:field-type-string) 
+	'protobuf:field-type-string)
+       ((eq? descriptor protobuf:field-type-bytes) 
+	'protobuf:field-type-bytes)      
+       
+       ;; It must be a user-defined type
+       
+       ((protobuf:message-field-type-descriptor? descriptor)
+	(message-field-type-descriptor-expr descriptor))
+       ((protobuf:enum-field-type-descriptor? descriptor)
+	(enum-field-type-descriptor-expr descriptor))
+       (else (raise (make-assertion-violation))))))
+  
   (define (protoc:generate-extension extension naming-context)
     (define builder-naming-context
       (protoc:naming-context-builder-naming-context naming-context))
