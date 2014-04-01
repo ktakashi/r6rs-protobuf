@@ -1,5 +1,5 @@
 ;; private.scm: private definitions and support API for r6rs-protobuf
-;; Copyright (C) 2012 Julian Graham
+;; Copyright (C) 2014 Julian Graham
 
 ;; r6rs-protobuf is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -46,7 +46,6 @@
 	  protobuf:field-type-bool
 	  protobuf:field-type-string
 	  protobuf:field-type-bytes
-	  protobuf:field-type-message
 
 	  protobuf:make-field-descriptor
 	  protobuf:field-descriptor-default
