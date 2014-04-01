@@ -1,0 +1,8 @@
+Sun May  8 21:39:48 EDT 2011
+
+
+To install the r6rs-protobuf library, copy the contents of the protobuf/ folder
+to a location in which your Scheme platform can locate them.
+
+The tests/ folder contains some SRFI-64 unit tests. It does not need to be
+installed.

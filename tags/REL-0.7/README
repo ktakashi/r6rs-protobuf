@@ -1,0 +1,206 @@
+Sat Dec  8 19:15:56 EDT 2012
+
+
+r6rs-protobuf
+=============
+
+This project is an R6RS Scheme implementation of Google's Protocol Buffers
+framework. It supports all of the features of the Protocol Buffer data 
+language, except for the deprecated "group" feature. The following 
+documentation explains how to use the components provided by this 
+implementation; for more general information about protocol buffers, see the
+main protobuf project page at http://code.google.com/p/protobuf/.
+
+
+Requirements
+============
+
+This library requires a Scheme platform capable of importing R6RS library 
+forms. Additionally, SRFI-13 ("String Library") and SRFI-14 ("Character Set 
+Library") are required.
+
+SRFI-64 ("A Scheme API for test suites") is required to run the included unit 
+tests.
+
+
+Provided libraries
+==================
+
+r6rs-protobuf provides two sets of functional components: Parsing and code
+generation, which produce R6RS Scheme libraries based on protobuf definitions;
+and runtime support for the generated code, to enable features like 
+serialization and extension registration.
+
+The code generation API is provided by the `(protobuf compile)' library. The
+functions that make up the compiler API have the prefix `protoc:'.
+
+The runtime support is provided by the `(protobuf private)' library. The 
+functions that make up the runtime support API have the prefix `protobuf:'. 
+Note that it shouldn't ever be necessary to import this library directly; all 
+the functionality necessary for interacting with your data structures should be
+exported by the generated libraries.
+
+
+Code generation
+===============
+
+In order to generate Scheme code from protobuf definitions, a .proto file (or 
+other source of definitions) must first be parsed. The `protoc:read-proto' 
+function takes one argument, an input port from which definitions can be read:
+
+  (protoc:read-proto (open-input-file "MyDataStructure.proto"))
+
+The data source may specify multiple type definitions and packages. If `import'
+directives are found, the paths they specify will be opened using 
+`open-input-file'.
+
+After parsing is complete, type resolution for extensions and enum- and
+message-type fields is performed.
+
+The resulting `proto' record may be passed to `protoc:generate-libraries' to
+generate R6RS library forms for the packages defined in the proto. This 
+function returns multiple values, one for each top-level message or enum 
+definition for each distinct package definition.
+
+Each resulting library will be given a name corresponding to the package and 
+type definition it represents - dots are replaced with spaces, so the package 
+name "com.google.protobuf" with top-level message definition "MyMessage" will 
+be translated to the library name `(com google protobuf MyMessage)'. 
+Definitions that occur outside of a specified package will produce a library
+whose name has the prefix `(protobuf default)'.
+
+
+Messages
+========
+
+Each protobuf message definition will generate two R6RS record definitions: An
+opaque, sealed record type whose parent type is `protobuf:message' and which
+defines a set of immutable fields that corresponds to the set of fields in the 
+message definition; and a "builder" record type whose parent type is 
+`protobuf:message-builder' and which defines mutable versions of the message's
+fields. The builder type exports the following bindings:
+
+* make-[message name]-builder => The builder record constructor
+* [message name]-builder? => The builder record type predicate
+* [message name]-builder-build => The builder message factory function
+
+* [message name]-builder-extension => The builder extension accessor function
+* has-[message name]-builder-extension? => The builder extension "has" predicate
+* set-[message name]-builder-extension! => The builder extension mutator 
+  function
+* clear-[message name]-builder-extension! => The builder extension clear 
+  function
+
+* [message name]-builder-[field name] => For each field, the field accessor 
+  function
+* has-[message name]-builder-[field name]? => For each field, the field "has" 
+  predicate
+* set-[message name]-builder-[field name]! => For each field, the field mutator
+  function
+* clear-[message name]-builder-[field name]! => For each field, the field clear
+  function
+
+* [message name]? => The message type predicate
+
+* [message name]-extension => The message extension accessor function
+* has-[message name]-extension? => The message extension "has" predicate
+
+* [message name]-[field name] => For each field, the field accessor function
+* has-[message name]-[field name]? => For each optional field, the field "has"
+  predicate
+
+* [message name]-write => The message type serializer
+* [message name]-read => The message type deserializer
+
+When the builder factory function is called, a new instance of the message type
+is constructed that includes a shallow clone of the fields set on the builder
+at the time the factory function was called. The contents of repeated types are
+also converted from lists to vectors.
+
+The -write function takes an output port as its second argument; the -read
+function takes an input port. Serialization and deserialization is performed
+according to the protocol buffer wire protocol format description.
+
+For example, the extension definition
+
+  message MyDataStructure {
+    repeated string foo = 1;
+  }
+
+produces the following bindings:
+
+  make-MyDataStructure-builder
+  MyDataStructure-builder?
+  MyDataStructure-builder-build
+
+  MyDataStructure-builder-foo
+  set-MyDataStructure-builder-foo!
+  has-MyDataStructure-builder-foo?
+  clear-MyDataStructure-builder-foo!
+
+  MyDataStructure?
+  MyDataStructure-foo
+
+Use of the builder API follows the following pattern:
+
+1. Construct builder
+2. Set desired fields on builder
+3. Use factory function to construct immutable message instances
+
+For example:
+
+  (define mdsb (make-MyDataStructure-builder))
+  (set-MyDataStructure-builder-foo! '("a" "b" "c"))
+  (define mds (MyDataStructure-builder-build))
+  (MyDataStructure-foo mds)
+  => #("a" "b" "c")
+
+
+Enumerations
+============
+
+Each protobuf enum definition will generate an R6RS enumeration definition and
+export two bindings: The enumeration's "constructor syntax," which can be used
+to produce subsets of its universe; and its type predicate macro:
+
+* make-[enumeration name] => The constructor syntax
+* [enumeration name]? => The type predicate macro
+
+For example, the enum definition
+
+  enum MyEnumeration {
+    FOO = 1, BAR = 2
+  }
+
+creates the following bindings:
+
+  make-MyEnumeration
+  MyEnumeration?
+
+
+Extensions
+==========
+
+Each protobuf extension definition will generate a set of extension field
+descriptor bindings that corresponds to the set of fields defined by the
+extensions. 
+
+* [message name]-[extension field name]
+
+These field descriptors can be passed as the second argument to the extension
+functions exported by the message types. For example, the extension definition
+
+  extend MyDataStructure {
+    optional int32 bar = 100;
+  }
+
+will produce the extension field descriptor `MyDataStructure-foo', which can be
+used with the extension API of `MyDataStructure' in the following ways:
+
+  (define mdsb (make-MyDataStructure-builder))
+  (set-MyDataStructure-builder-extension mdsb MyDataStructure-bar 256)
+  (has-MyDataStructure-builder-extension? mdsb MyDataStructure-bar)
+  => #t
+  (define mds (MyDataStructure-builder-build))
+  (has-MyDataStructure-extension? mds MyDataStructure-bar)
+  => #t
