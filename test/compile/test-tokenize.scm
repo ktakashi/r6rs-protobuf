@@ -1,5 +1,6 @@
 ;; test-tokenize.scm: lexer test routines for r6rs-protobuf
 ;; Copyright (C) 2012 Julian Graham
+;; Copyright (C) 2015 Takashi Kato
 
 ;; r6rs-protobuf is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -16,11 +17,12 @@
 
 #!r6rs
 
-(import (rnrs))
-(import (srfi :64))
-(import (protobuf compile tokenize))
+(import (rnrs)
+	(srfi :64)
+	(protobuf compile tokenize))
 
 ; (set! test-log-to-file #f)
+(define open-input-string open-string-input-port)
 
 (define (token-map str f)
   (let loop ((lexer (protoc:make-tokenizer (open-input-string str)))

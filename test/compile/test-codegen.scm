@@ -1,5 +1,6 @@
 ;; test-codegen.scm: code generation test routines for r6rs-protobuf
 ;; Copyright (C) 2011 Julian Graham
+;; Copyright (C) 2015 Takashi Kato
 
 ;; r6rs-protobuf is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -16,10 +17,10 @@
 
 #!r6rs
 
-(import (rnrs))
-(import (rnrs eval))
-(import (srfi :64))
-(import (protobuf compile codegen)
+(import (rnrs)
+	(rnrs eval)
+	(srfi :64)
+	(protobuf compile codegen)
 	(protobuf compile parse)
 	(protobuf private))
 
@@ -62,37 +63,38 @@
     (protoc:set-message-definition-fields! 
      message-definition-2 (list message-field-3))
 
-    (for-each (lambda (exp) (eval exp test-env)) 
-	      (append
-	       (protoc:generate-message
-		message-definition-1 protoc:default-naming-context)
-	       (protoc:generate-builder
-		message-definition-1 protoc:default-naming-context)
-	       (protoc:generate-message
+    (let ()
+      (define test-expression
+	`(let ()
+	   ,@(protoc:generate-message
+	     message-definition-1 protoc:default-naming-context)
+	   ,@(protoc:generate-builder
+	     message-definition-1 protoc:default-naming-context)
+	   ,@(protoc:generate-message
 		message-definition-2 protoc:default-naming-context)
-	       (protoc:generate-builder
-		message-definition-2 protoc:default-naming-context)))
+	   ,@(protoc:generate-builder
+	     message-definition-2 protoc:default-naming-context)
+	   (define (get)
+	     (let ((b2 (make-TestMessage2-builder))
+		   (b1 (make-TestMessage1-builder)))
+	       (set-TestMessage1-builder-num! b1 123)
+	       (set-TestMessage2-builder-text! b2 "Hello, 2!")
+	       (set-TestMessage1-builder-msg! 
+		b1 (TestMessage2-builder-build b2))
+	       (let ((m1 (TestMessage1-builder-build b1)))
+		 (let-values 
+		     (((port proc) (open-bytevector-output-port)))
+		   (TestMessage1-write m1 port)
+		   (TestMessage1-read 
+		    (open-bytevector-input-port (proc)))))))
+	   (let ((mm1 (get)))
+	     (values mm1
+		     (TestMessage1-num mm1)
+		     (TestMessage2-text (TestMessage1-msg mm1))))))
 
-    (let ((mm1 
-	   (eval '(let ((b2 (make-TestMessage2-builder))
-			(b1 (make-TestMessage1-builder)))
-		    (set-TestMessage1-builder-num! b1 123)
-		    (set-TestMessage2-builder-text! b2 "Hello, 2!")
-		    (set-TestMessage1-builder-msg! 
-		     b1 (TestMessage2-builder-build b2))
-		    (let ((m1 (TestMessage1-builder-build b1)))
-		      (let-values 
-			  (((port proc) (open-bytevector-output-port)))
-			(TestMessage1-write m1 port)
-			(TestMessage1-read 
-			 (open-bytevector-input-port (proc))))))
-		 test-env)))
-
-      (test-assert 
-       (eqv? (eval `(TestMessage1-num ,mm1) test-env) 123))
-      (test-assert 
-       (equal? (eval `(TestMessage2-text (TestMessage1-msg ,mm1)) test-env) 
-	       "Hello, 2!")))))
+      (let-values (((mm1 num msg) (eval test-expression test-env)))
+	(test-equal "TestMessage1 num" 123 num)
+	(test-equal "TestMessage2 test" "Hello, 2!" msg)))))
 
 (test-end "message")
 

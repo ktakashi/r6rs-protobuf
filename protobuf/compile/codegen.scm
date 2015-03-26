@@ -38,7 +38,7 @@
   (import (rnrs)
 	  (protobuf compile parse)
 	  (protobuf private)
-	  (srfi :13)
+	  (only (srfi :13) string-tokenize)
 	  (srfi :14))
 
   (define-record-type (protoc:extension-naming-context
@@ -647,7 +647,8 @@
 	    (get-bytevector-n ,p0 (protobuf:read-varint ,p0)))))
 	,(message-predicate-name 
 	  (protobuf:message-field-type-descriptor-definition descriptor))
-	,(protobuf:field-type-descriptor-default descriptor)))
+	,(protobuf:field-type-descriptor-default descriptor)
+	#f))
     
     (define (enum-field-type-descriptor-expr descriptor)
       (define enum 

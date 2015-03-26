@@ -1,5 +1,6 @@
 ;; test-parse.scm: parser test routines for r6rs-protobuf
 ;; Copyright (C) 2011 Julian Graham
+;; Copyright (C) 2015 Takashi Kato
 
 ;; r6rs-protobuf is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -16,11 +17,11 @@
 
 #!r6rs
 
-(import (rnrs))
-(import (srfi :64))
-(import (protobuf compile parse))
-(import (protobuf compile tokenize))
-(import (protobuf private))
+(import (rnrs)
+	(srfi :64)
+	(protobuf compile parse)
+	(protobuf compile tokenize)
+	(protobuf private))
 
 (define (mock-lexer . token-list)
   (define tokens token-list)
@@ -111,17 +112,16 @@
 	       (and (field-definition-equal? field1 field2)
 		    (loop (cdr fields1) (cdr fields2))))))))
 
-(define (type-reference-equal? f1 f2)
-  (and (protoc:type-reference? f1)
-       (protoc:type-reference? f2)
-       (equal? (protoc:type-reference-name f1)
-	       (protoc:type-reference-name f2))
-       (eq? (protoc:type-reference-descriptor f1)
-	    (protoc:type-reference-descriptor f2))
-       (eq? (protoc:type-reference-location f1)
-	    (protoc:type-reference-location f2))))
-
 (define (field-definition-equal? f1 f2)
+  (define (type-reference-equal? f1 f2)
+    (and (protoc:type-reference? f1)
+	 (protoc:type-reference? f2)
+	 (equal? (protoc:type-reference-name f1)
+		 (protoc:type-reference-name f2))
+	 (eq? (protoc:type-reference-descriptor f1)
+	      (protoc:type-reference-descriptor f2))
+	 (eq? (protoc:type-reference-location f1)
+	      (protoc:type-reference-location f2))))
   (and (protoc:field-definition? f1)
        (protoc:field-definition? f2)
        (eq? (protoc:field-definition-rule f1)
@@ -149,13 +149,12 @@
        (eqv? (protoc:extension-range-definition-to e1)
 	     (protoc:extension-range-definition-to e2))))
 
-(define (type-reference-equal? t1 t2)
-  (and (protoc:type-reference? t1)
-       (protoc:type-reference? t2)
-       (equal? (protoc:type-reference-name t1)
-	       (protoc:type-reference-name t2))))
-
 (define (extension-definition-equal? e1 e2)
+  (define (type-reference-equal? t1 t2)
+    (and (protoc:type-reference? t1)
+	 (protoc:type-reference? t2)
+	 (equal? (protoc:type-reference-name t1)
+		 (protoc:type-reference-name t2))))
   (and (protoc:extension-definition? e1)
        (protoc:extension-definition? e2)
        (type-reference-equal? (protoc:extension-definition-target e1)
@@ -210,7 +209,7 @@
     (protoc:set-package-subpackages!
      target-root-package 
      (cons q (protoc:package-subpackages target-root-package)))
-    (test-assert 
+    (test-assert "proto-definition-equal?"
      (proto-definition-equal? (protoc:make-proto target-root-package) p))))
 
 (test-group "message"
@@ -221,7 +220,7 @@
     (protoc:set-package-definitions!
      target-root-package 
      (cons q (protoc:package-definitions target-root-package)))
-    (test-assert 
+    (test-assert "proto-definition-equal?"
      (proto-definition-equal? (protoc:make-proto target-root-package) p))))
 
 (test-group "enum"
@@ -232,7 +231,7 @@
     (protoc:set-package-definitions!
      target-root-package
      (cons q (protoc:package-definitions target-root-package)))
-    (test-assert
+    (test-assert "proto-definition-equal?"
      (proto-definition-equal? (protoc:make-proto target-root-package) p))))
 
 (test-group "extension"
@@ -246,7 +245,7 @@
 	 (r (protoc:make-extension-definition rt target-root-package)))
     (protoc:set-type-reference-location! rt r)
     (protoc:set-package-definitions! target-root-package (list r q))
-    (test-assert
+    (test-assert "proto-definition-equal?"
      (proto-definition-equal? (protoc:make-proto target-root-package) p))))
 
 (test-end "simple")
@@ -282,6 +281,7 @@
      q (list (protoc:make-field-definition 
 	      q 'required (protoc:make-type-reference 
 			   "Foo" (protobuf:make-message-field-type-descriptor 
+				  "Foo" #f #f #f #f #f
 				  q))
 	      "foo" 1))))
 )
@@ -314,7 +314,7 @@
     (protoc:set-package-definitions!
      target-root-package 
      (cons q (protoc:package-definitions target-root-package)))
-    (test-assert
+    (test-assert "proto-definition-equal? (options)"
      (proto-definition-equal? (protoc:make-proto target-root-package) p))))  
 (test-end "field")
 

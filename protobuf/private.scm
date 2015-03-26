@@ -62,6 +62,7 @@
 
 	  protobuf:register-extension
 
+	  protobuf:message-builder
 	  protobuf:message-builder-build
 	  protobuf:message-builder-field
 	  protobuf:clear-message-builder-extension!
@@ -69,6 +70,7 @@
 	  protobuf:message-builder-has-extension?
 	  protobuf:set-message-builder-extension!
 	  
+	  protobuf:message
 	  protobuf:make-message
 	  protobuf:message-extension
 	  protobuf:message-field
@@ -380,7 +382,8 @@
 
     (let* ((type (protobuf:message-builder-type b))
 	   (ctor (record-constructor
-		  (make-record-constructor-descriptor type #f #f)))
+		  (make-record-constructor-descriptor 
+		   (record-type-descriptor type) #f #f)))
 	   (fields (protobuf:message-builder-fields b)))
 	    
       (for-each ensure-required fields)
@@ -439,13 +442,13 @@
 
   (define (int32? obj) 
     (and (integer? obj) (>= obj -2147483648) (<= obj 2147483647)))
-  (define (uint32? obj) (and (integer? obj) (>= obj 0) (<= 4294967295)))
+  (define (uint32? obj) (and (integer? obj) (>= obj 0) (<= obj 4294967295)))
   (define (int64? obj)
     (and (integer? obj) 
 	 (>= obj -9223372036854775808) 
 	 (<= obj 9223372036854775807)))
   (define (uint64? obj) 
-    (and (integer? obj) (>= obj 0) (<= 18446744073709551615)))
+    (and (integer? obj) (>= obj 0) (<= obj 18446744073709551615)))
   
   (define protobuf:field-type-double 
     (protobuf:make-field-type-descriptor 

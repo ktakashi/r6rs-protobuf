@@ -1,0 +1,12 @@
+Things I thought not pretty.
+
+- It uses generate-temporaries to make unique symbol however some 
+  implementations (e.g. Vicare) generates non portable representative
+  symbols. Thus, the generated code won't be portable.
+- Lexer doesn't allow /* */ style comment.
+- Toplevel(?) `option` is not allowed.
+- symbol after package is not allowed.
+- Holding record type on a slot of a record isn't portable on R6RS. This
+  fails at least Chez and Mosh(Psyntax).
+
+... maybe so on

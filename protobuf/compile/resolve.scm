@@ -19,7 +19,7 @@
 (library (protobuf compile resolve)
   (export protoc:resolve)
   (import (rnrs)
-	  (srfi :13)
+	  (only (srfi :13) string-tokenize string-prefix? string-index-right)
 	  (srfi :14)
 	  (protobuf compile conditions)
 	  (protobuf compile parse)

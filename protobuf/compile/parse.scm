@@ -1,5 +1,6 @@
 ;; parse.scm: .proto format parsing routines for r6rs-protobuf
 ;; Copyright (C) 2012 Julian Graham
+;; Copyright (C) 2015 Takashi Kato
 
 ;; r6rs-protobuf is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -102,7 +103,7 @@
   (import (rnrs)
  	  (protobuf private)
 	  (protobuf compile tokenize)
-	  (srfi :13)
+	  ;; (srfi :13) ;; it's not needed
 	  (srfi :14))
 
   (define-record-type (protoc:proto protoc:make-proto protoc:proto?)
@@ -261,7 +262,7 @@
     (protocol 
      (lambda (p) 
        (lambda (name package . parent) 
-	 (p name (if (null? parent) #f (car parent)) package  '() '() '())))))
+	 (p name (if (null? parent) #f (car parent)) package  '() '())))))
   
   (define (merge-package! scope package) #f)
 
