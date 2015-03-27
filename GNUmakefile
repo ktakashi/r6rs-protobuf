@@ -41,6 +41,11 @@ generate:
 	done;
 
 test: generate
+	$(SCHEME) $(LOAD_FLAG) $(LIB_PATH) test/compile/test-tokenize.scm
+	$(SCHEME) $(LOAD_FLAG) $(LIB_PATH) test/compile/test-parse.scm
+	$(SCHEME) $(LOAD_FLAG) $(LIB_PATH) test/compile/test-codegen.scm
+	$(SCHEME) $(LOAD_FLAG) $(LIB_PATH) test/test-compile.scm
+	$(SCHEME) $(LOAD_FLAG) $(LIB_PATH) test/test-private.scm
 	$(SCHEME) $(LOAD_FLAG) $(LIB_PATH) $(LOAD_FLAG) tmp test/test-addressbook.scm
 
 clean:

@@ -1,5 +1,6 @@
 ;; test-private.scm: private API test routines for r6rs-protobuf
 ;; Copyright (C) 2011 Julian Graham
+;; Copyright (C) 2015 Takashi Kato
 
 ;; r6rs-protobuf is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -16,9 +17,9 @@
 
 #!r6rs
 
-(import (rnrs))
-(import (protobuf private))
-(import (srfi :64))
+(import (rnrs)
+	(protobuf private)
+	(srfi :64))
 
 (test-begin "private")
 (test-begin "read")
@@ -32,7 +33,7 @@
   (protocol 
    (lambda (p)
      (lambda ()
-       (let ((n (p read-test-message
+       (let ((n (p (record-type-descriptor read-test-message)
 		   (list (protobuf:make-field-descriptor 
 			  0 "foo" protobuf:field-type-string #f #t #f)))))
 	 (n #f))))))
