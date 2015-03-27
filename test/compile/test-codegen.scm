@@ -22,8 +22,7 @@
 	(srfi :64)
 	(protobuf compile codegen)
 	(protobuf compile parse)
-	(protobuf private)
-	(protobuf compile pretty-print))
+	(protobuf private))
 
 (test-begin "codegen")
 
@@ -92,7 +91,7 @@
 	     (values mm1
 		     (TestMessage1-num mm1)
 		     (TestMessage2-text (TestMessage1-msg mm1))))))
-      (protoc:pretty-print test-expression)
+
       (let-values (((mm1 num msg) (eval test-expression test-env)))
 	(test-equal "TestMessage1 num" 123 num)
 	(test-equal "TestMessage2 test" "Hello, 2!" msg)))))
@@ -114,11 +113,16 @@
 			(protoc:naming-context-enum-naming-context 
 			 protoc:default-naming-context)))
 	  (test-env (environment '(rnrs))))
-      (for-each (lambda (exp) (eval exp test-env)) expressions)
-      (test-assert (eval '(test-enum test-enum-ONE) test-env) 'test-enum-ONE)
-      (test-assert (eval '(test-enum test-enum-TWO) test-env) 'test-enum-TWO)
-      (test-assert (eval '(test-enum test-enum-THREE) test-env) 
-		   'test-enum-THREE))))
+      (define test-expression
+	`(let ()
+	   ,@expressions
+	   (values (test-enum test-enum-ONE)
+		   (test-enum test-enum-TWO)
+		   (test-enum test-enum-THREE))))
+      (let-values (((one two three) (eval test-expression test-env)))
+	(test-equal "ONE" one 'test-enum-ONE)
+	(test-equal "TWO" two 'test-enum-TWO)
+	(test-equal "THREE" three 'test-enum-THREE)))))
 
 (test-end "enum")
 (test-end "codegen")
