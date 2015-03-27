@@ -279,11 +279,9 @@
     (define token-stack (list))
 
     (define (unexpected-token-error)
-      (raise (condition 
-	      (make-assertion-violation)
-	      (make-message-condition 
-	       (string-append "Unexpected token: " 
-			      (symbol->string current-category))))))
+      (assertion-violation (symbol->string current-category)
+			   (string-append "Unexpected token")
+			   current-value))
 
     (define (get-token) 
       (define (set-data token)
@@ -575,6 +573,12 @@
 	(assert-next-category 'LBRACE)
 	(parse-extension-element extension-def)))
 
+    (define (ignore-until-semicolon)
+      (get-token)
+      (case current-category
+	((SEMICOLON) #t)
+	(else (ignore-until-semicolon))))
+
     (define (parse-proto)
       (define (parse-proto-elements)
 	(get-token)
@@ -600,6 +604,8 @@
 	   (parse-proto-elements))
 	  ((PACKAGE) (parse-package) (parse-proto-elements))
 	  ((*eoi*) proto)
+	  ;; ignore toplevel(?) option for now
+	  ((OPTION) (ignore-until-semicolon) (parse-proto-elements))
 	  (else (unexpected-token-error))))
       
       (parse-proto-elements)
