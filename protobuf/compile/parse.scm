@@ -455,10 +455,8 @@
 		 (options (parse-maybe-field-options))
 		 (fd (protoc:make-field-definition 
 		      parent rule type field-name index options)))
-	    
 	    (assert-next-category 'SEMICOLON)
 	    (protoc:set-type-reference-location! type fd)
-
 	    fd))))
 
     (define (parse-message parent)
@@ -513,7 +511,7 @@
 	  ((MESSAGE)
 	   (protoc:set-message-definition-definitions!
 	    message-def
-	    (cons (parse-message message-def) 
+	    (cons (parse-message message-def)
 		  (protoc:message-definition-definitions message-def)))
 	   (parse-message-element message-def))
 	  ((OPTIONAL)

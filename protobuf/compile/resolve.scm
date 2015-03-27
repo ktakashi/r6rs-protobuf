@@ -193,29 +193,28 @@
 				      name subpackage))
 				(loop (cdr subpackages)))))))))))
 
-    (let* ((location (protoc:type-reference-location type-reference))
-	   (location (cond ((protoc:extension-definition? location) location)
-			   ((protoc:field-definition? location)
-			    (protoc:field-definition-parent location))
+    (let* ((location1 (protoc:type-reference-location type-reference))
+	   (location (cond ((protoc:extension-definition? location1) location1)
+			   ((protoc:field-definition? location1)
+			    (protoc:field-definition-parent location1))
 			   (else (raise (make-assertion-violation)))))
-	   (package (cond ((protoc:extension-definition? location)
-			   (protoc:extension-definition-package location))
-			  ((protoc:message-definition? location)
-			   (protoc:message-definition-package location))
-			  (else #f)))
+;; seems not used
+;; 	   (package (cond ((protoc:extension-definition? location)
+;; 			   (protoc:extension-definition-package location))
+;; 			  ((protoc:message-definition? location)
+;; 			   (protoc:message-definition-package location))
+;; 			  (else #f)))
 	   (name (protoc:type-reference-name type-reference))
 	   (definition (or (resolve-type-upwards name location)
 			   (resolve-type-downwards 
 			    name (protoc:type-resolution-context-root-package 
 				  context))))
 	   (descriptor (and definition (definition->descriptor definition))))
-      
+
       (if descriptor
 	  (protoc:set-type-reference-descriptor! type-reference descriptor)
-	  (raise (condition 
-		  (make-assertion-violation)
-		  (make-message-condition
-		   (string-append "Reference to unknown type " name)))))))
+	  (assertion-violation 'resolve-type
+	   (string-append "Reference to unknown type " name)))))
   
   (define (resolve-extension extension-def)
     (define (valid-extension? extension-field message-def)
@@ -280,15 +279,13 @@
 	(cond ((protoc:enum-definition? definition)
 	       (resolve-enum-definition definition))
 	      ((protoc:message-definition? definition)
-	       (resolve-message-definition definition))
+	       (resolve-message-definition definition)
+	       (for-each resolve-definition 
+			 (protoc:message-definition-definitions definition)))
 	      ((protoc:extension-definition? definition)
 	       (resolve-extension-definition definition))
-	      (else (raise 
-		     (condition 
-		      (make-assertion-violation)
-		      (make-message-condition "Unknown definition type")
-		      (protoc:make-type-resolution-condition))))))
-      
+	      (else (assertion-violation 'resolve "Unknown definition type"
+		     (protoc:make-type-resolution-condition)))))
       (for-each resolve-definition (protoc:package-definitions package))
       (for-each resolve-package (protoc:package-subpackages package)))
     
@@ -331,32 +328,35 @@
 
     (index-package (protoc:type-resolution-context-root-package context))
     (resolve-package (protoc:proto-root-package proto)))
-    
-  (define (scan proto context)
-    (define (register-unresolved-type-reference type-reference)
-      (if (not (protoc:type-reference-descriptor type-reference))
-	  (hashtable-update! 
-	   (protoc:type-resolution-context-unresolved-references context)
-	   (protoc:type-reference-name type-reference)
-	   (lambda (refs) (cons type-reference refs))
-	   (list type-reference))))
-    
-    (define (scan-definition definition)
-      (define (scan-field-definition definition)
-	(register-unresolved-type-reference
-	 (protoc:field-definition-type definition)))
 
-      (cond ((protoc:message-definition? definition)
-	     (for-each scan-field-definition
-		       (protoc:message-definition-fields definition)))
-	    ((protoc:extension-definition? definition)
-	     (register-unresolved-type-reference 
-	      (protoc:extension-definition-target definition)))))
-
-    (define (scan-package package)
-      (for-each scan-definition (protoc:package-definitions package))
-      (for-each scan-package (protoc:package-subpackages package)))
-    (scan-package (protoc:proto-root-package proto)))
+;; seems not used    
+;;   (define (scan proto context)
+;;     (define (register-unresolved-type-reference type-reference)
+;;       (if (not (protoc:type-reference-descriptor type-reference))
+;; 	  (hashtable-update! 
+;; 	   (protoc:type-resolution-context-unresolved-references context)
+;; 	   (protoc:type-reference-name type-reference)
+;; 	   (lambda (refs) (cons type-reference refs))
+;; 	   (list type-reference))))
+;;     
+;;     (define (scan-definition definition)
+;;       (define (scan-field-definition definition)
+;; 	(register-unresolved-type-reference
+;; 	 (protoc:field-definition-type definition)))
+;; 
+;;       (cond ((protoc:message-definition? definition)
+;; 	     (for-each scan-definition
+;; 		       (protoc:message-definition-definitions definition))
+;; 	     (for-each scan-field-definition
+;; 		       (protoc:message-definition-fields definition)))
+;; 	    ((protoc:extension-definition? definition)
+;; 	     (register-unresolved-type-reference 
+;; 	      (protoc:extension-definition-target definition)))))
+;; 
+;;     (define (scan-package package)
+;;       (for-each scan-definition (protoc:package-definitions package))
+;;       (for-each scan-package (protoc:package-subpackages package)))
+;;     (scan-package (protoc:proto-root-package proto)))
 
   (define (protoc:resolve proto . rest)
     (define resolution-basedir (and (not (null? rest)) (car rest)))
@@ -364,7 +364,9 @@
       (protoc:make-type-resolution-context 
        (clone-package (protoc:proto-root-package proto)) 
        resolution-basedir))
-    
-    (scan proto resolution-context)
+    ;; seems not used for some reason
+    ;; i think it's better to resolve type-references accoding to the
+    ;; scan result but for now it's ok
+    ;; (scan proto resolution-context)
     (resolve proto resolution-context))
 )
