@@ -1,5 +1,6 @@
 ;; tokenize.scm: .proto tokenization routines for r6rs-protobuf
 ;; Copyright (C) 2012 Julian Graham
+;; Copyright (C) 2015 Takashi Kato
 
 ;; r6rs-protobuf is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
