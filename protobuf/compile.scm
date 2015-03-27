@@ -60,7 +60,11 @@
 				     definition))))
 	       
 		     (else (raise (make-assertion-violation))))))
-	(else (raise (make-assertion-violation))))))
+	(else (assertion-violation
+	       'singleton-definition-package-name-transformer
+	       "package definitions must be 0 or 1"
+	       default-name
+	       (protoc:package-definitions package))))))
 
   (define singleton-definition-naming-context
     (protoc:make-naming-context singleton-definition-package-name-transformer
@@ -152,6 +156,23 @@
 
     (define resolution-basedir (and (not (null? rest)) (car rest)))
 
+    ;; generated singleton-libraries are separated by message names
+    ;; and if package is specified, this is kinda incovenient to use
+    ;; so create a library named ($package) and let it export all
+    ;; bindings defined in the libraries.
+    (define (append-top-library package libraries)
+      (define (top-library package libraries)
+	(let ((lib (default-package-name-transformer package))
+	      (exports (map caddr libraries))
+	      (names (map cadr libraries)))
+	  `((library ,lib
+	       (export ,@(apply append (map cdr exports)))
+	       (import ,@names)))))
+      (let ((name (protoc:package-name package)))
+	(if name
+	    (append libraries (top-library package libraries))
+	    libraries)))
+
     (define (generate-libraries package)
       (fixup-package-dependencies! package)
       (let* ((singleton-packages 
@@ -163,17 +184,19 @@
 		     (protoc:generate-package 
 		      singleton-package singleton-definition-naming-context))
 		   singleton-packages)))
-	(let loop ((subpackages (protoc:package-subpackages package))
-		   (libraries (list)))
-	  (if (null? subpackages)
-	      (if (not (null? singleton-libraries))
-		  (append singleton-libraries libraries)
-		  libraries)
-	      (let* ((p (car subpackages))
-		     (l (generate-libraries p)))
-		(if (null? l)
-		    (loop (cdr subpackages) libraries)
-		    (loop (cdr subpackages) (append l libraries))))))))
+	(let ((singleton-libraries 
+	       (append-top-library package singleton-libraries)))
+	  (let loop ((subpackages (protoc:package-subpackages package))
+		     (libraries (list)))
+	    (if (null? subpackages)
+		(if (not (null? singleton-libraries))
+		    (append singleton-libraries libraries)
+		    libraries)
+		(let* ((p (car subpackages))
+		       (l (generate-libraries p)))
+		  (if (null? l)
+		      (loop (cdr subpackages) libraries)
+		      (loop (cdr subpackages) (append l libraries)))))))))
 
     (protoc:resolve proto resolution-basedir)
     (apply values (generate-libraries (protoc:proto-root-package proto))))
