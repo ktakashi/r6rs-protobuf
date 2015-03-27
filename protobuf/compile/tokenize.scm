@@ -164,6 +164,18 @@
 	(let ((c (lexer:read-char)))
 	  (or (eof-object? c) (eqv? #\newline c) (until-newline))))
 
+      (define (block-comment)
+	;; TODO: should we allow nested comments?
+	;; for now we do C style (not allowed)
+	(lexer:read-char) ;; discards the first *
+	(let loop ()
+	  (let ((c (lexer:read-char)))
+	    (case c
+	      ((#\*)
+	       (unless (eqv? (lexer:read-char) #\/)
+		 (loop)))
+	      (else (loop))))))
+
       (let ((c (lexer:peek-char)))
 	(cond ((eof-object? c) #f)
 	      ((eqv? c #\/)
@@ -171,6 +183,7 @@
 	       (let ((c (lexer:peek-char)))
 		 (cond ((eof-object? c) #f)
 		       ((eqv? c #\/) (until-newline) #t)
+		       ((eqv? c #\*) (block-comment) #t)
 		       (else (lexer:unread-char c)))))
 	      (else #f))))
     
