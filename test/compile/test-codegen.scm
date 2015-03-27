@@ -91,7 +91,6 @@
 	     (values mm1
 		     (TestMessage1-num mm1)
 		     (TestMessage2-text (TestMessage1-msg mm1))))))
-
       (let-values (((mm1 num msg) (eval test-expression test-env)))
 	(test-equal "TestMessage1 num" 123 num)
 	(test-equal "TestMessage2 test" "Hello, 2!" msg)))))

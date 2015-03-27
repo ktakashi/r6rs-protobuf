@@ -273,6 +273,12 @@
     (protocol 
      (lambda (p)
        (lambda (type field-descriptors) 
+	 ;; type must be RTD, not defined record type which might be a
+	 ;; mere macro in some implementations (e.g. Chez, Mosh and Vicare)
+	 (unless (record-type-descriptor? type)
+	   (assertion-violation 'protobuf:make-message-builder 
+				"type must be a record type descriptor"
+				type))
 	 (p type
 	    (map protobuf:make-field 
 		 (list-sort (lambda (f1 f2)
@@ -382,8 +388,7 @@
 
     (let* ((type (protobuf:message-builder-type b))
 	   (ctor (record-constructor
-		  (make-record-constructor-descriptor 
-		   (record-type-descriptor type) #f #f)))
+		  (make-record-constructor-descriptor type #f #f)))
 	   (fields (protobuf:message-builder-fields b)))
 	    
       (for-each ensure-required fields)

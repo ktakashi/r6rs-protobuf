@@ -874,7 +874,8 @@
 				
 				fields)))
 		 
-		 (let ((,b3 (,b1 ,(message-type-name message) ,b2)))
+		 (let ((,b3 (,b1 (record-type-descriptor 
+				  ,(message-type-name message)) ,b2)))
 		   (apply ,b3 (map protobuf:field-descriptor-default ,b2))))))
 	    (sealed #t))
 	  
