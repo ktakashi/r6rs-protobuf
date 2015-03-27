@@ -20,14 +20,31 @@ LIB_PATH=$(shell pwd)
 
 .PHONY: all clean generate
 
-all: generate test
-	@echo $?
+all:
+	@echo 'test' or 'clean' target must be specified
 
 generate:
 	@echo Generating libraries from $(PROTO_FILES).
-	$(SCHEME) $(LOAD_FLAG) $(LIB_PATH) test/proto-files/generate.scm $(PROTO_FILES)
+	$(SCHEME) $(LOAD_FLAG) $(LIB_PATH) \
+		test/proto-files/generate.scm $(PROTO_FILES)
+	@for f in $(wildcard *.tmp); do \
+	    filename="$${f%.*}"; \
+	    IFS=. read -a array <<< "$$filename";\
+	    end=`expr $${#array[@]} - 2`; \
+	    dir=tmp; \
+	    for i in $$(seq 0 $$end); do \
+		dir=$$dir/$${array[$$i]}; \
+	    done; \
+	    mkdir -p $$dir; \
+	    echo "$$f to $$dir/$${array[`expr $${#array[@]} - 1`]}.sls"; \
+	    mv $$f $$dir/$${array[`expr $${#array[@]} - 1`]}.sls; \
+	done;
+
+test: generate
+	$(SCHEME) $(LOAD_FLAG) $(LIB_PATH) $(LOAD_FLAG) tmp test/test-addressbook.scm
 
 clean:
 	cd test/proto-files
 	rm -f *.tmp
 	rm -f *.sls
+	rm -rf tmp

@@ -1,5 +1,5 @@
 #!r6rs
-(import (rnrs) (protobuf compile) (srfi :13))
+(import (rnrs) (protobuf compile) (only (srfi :13) string-join))
 
 (define (generate-libraries file)
   ;; There is no portable way to make directories so

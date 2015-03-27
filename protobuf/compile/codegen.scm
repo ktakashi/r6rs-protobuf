@@ -693,7 +693,8 @@
 		   (protoc:enum-definition-values enum))))
 	,(enum-predicate-name
 	  (protobuf:enum-field-type-descriptor-definition descriptor))
-	,(protobuf:field-type-descriptor-default descriptor)))
+	,(protobuf:field-type-descriptor-default descriptor)
+	#f))
 
     (let ((descriptor (protoc:type-reference-descriptor type-ref)))
       (cond
