@@ -22,7 +22,8 @@
 	(srfi :64)
 	(protobuf compile codegen)
 	(protobuf compile parse)
-	(protobuf private))
+	(protobuf private)
+	(protobuf compile pretty-print))
 
 (test-begin "codegen")
 
@@ -56,7 +57,7 @@
 	   (protoc:make-type-reference "string" protobuf:field-type-string) 
 	   "text" 1))
 
-	 (test-env (environment '(rnrs) '(protobuf private))))
+	 (test-env (environment '(for (rnrs) run expand) '(protobuf private))))
 
     (protoc:set-message-definition-fields! 
      message-definition-1 (list message-field-1 message-field-2))
@@ -91,6 +92,7 @@
 	     (values mm1
 		     (TestMessage1-num mm1)
 		     (TestMessage2-text (TestMessage1-msg mm1))))))
+      (protoc:pretty-print test-expression)
       (let-values (((mm1 num msg) (eval test-expression test-env)))
 	(test-equal "TestMessage1 num" 123 num)
 	(test-equal "TestMessage2 test" "Hello, 2!" msg)))))
