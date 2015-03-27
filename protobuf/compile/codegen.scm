@@ -694,8 +694,8 @@
 	,(enum-predicate-name
 	  (protobuf:enum-field-type-descriptor-definition descriptor))
 	,(protobuf:field-type-descriptor-default descriptor)))
-    
-    (let ((descriptor (protoc:type-reference-descriptor type-ref)))	
+
+    (let ((descriptor (protoc:type-reference-descriptor type-ref)))
       (cond
        ((eq? descriptor protobuf:field-type-double)
 	'protobuf:field-type-double)
@@ -734,7 +734,8 @@
 	(message-field-type-descriptor-expr descriptor))
        ((protobuf:enum-field-type-descriptor? descriptor)
 	(enum-field-type-descriptor-expr descriptor))
-       (else (raise (make-assertion-violation))))))
+       (else (assertion-violation 'enum-field-type-descriptor-expr
+				  "Unknown type" descriptor)))))
   
   (define (protoc:generate-extension extension naming-context)
     (define builder-naming-context
